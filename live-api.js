@@ -331,6 +331,8 @@
       timestamp: ts,
     };
   }
+
+  function normalizeRecordings(data) {
     if (Array.isArray(data)) return data.filter((x) => x && typeof x === "object");
     if (data && typeof data === "object") {
       if (data.heart || data.lung) {
