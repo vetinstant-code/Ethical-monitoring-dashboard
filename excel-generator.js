@@ -711,14 +711,19 @@
 
   async function createReportClient(deviceId, options = {}) {
     const session = global.VetAuth?.getSession?.() || {};
+    const resolvedDeviceId = String(
+      deviceId || session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY"
+    )
+      .trim()
+      .toUpperCase();
     const cfg = {
       baseUrl: global.API_CONFIG.baseUrl,
-      deviceId: deviceId || session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY",
+      deviceId: resolvedDeviceId,
       timeoutMs: Number(options.timeoutMs) || 25000,
     };
     const client = new global.VetApiClient(cfg);
-    if (session.deviceId && session.password) {
-      await client.login(session.deviceId, session.password);
+    if (resolvedDeviceId && session.password) {
+      await client.login(resolvedDeviceId, session.password);
     }
     return { client, cfg };
   }
@@ -739,7 +744,13 @@
   }
 
   function recordingContainerKind(rec) {
-    return String(rec._audio_container || rec.organ || rec.recording_type || "").toLowerCase();
+    for (const key of ["_audio_container", "organ", "recording_organ", "body_system", "category", "recording_type", "type"]) {
+      const text = String(rec[key] || "").trim().toLowerCase();
+      if (!text) continue;
+      if (text.includes("heart") || text.includes("lung")) return text;
+      if (text === "heart" || text === "lung") return text;
+    }
+    return "";
   }
 
   function recordingIsHeart(rec) {
@@ -748,6 +759,56 @@
 
   function recordingIsLung(rec) {
     return recordingContainerKind(rec).includes("lung");
+  }
+
+  /** Scan every exam session (Python download-all); filter each clip by recording or session date. */
+  function resolveSessionsForAudioScan(uniqueSessions, from, to) {
+    return { sessions: uniqueSessions, filterRecordings: Boolean(from && to) };
+  }
+
+  function recordingInReportRange(rec, session, from, to) {
+    if (!from || !to) return true;
+    const row = {
+      recorded_at: rec.completed_at || rec.recorded_at || rec.created_at,
+      created_at: rec.completed_at || rec.recorded_at || rec.created_at,
+      timestamp: rec.timestamp,
+      s3_key: rec.s3_key || "",
+    };
+    const recDay = extractDatetimeParts(row)[0];
+    if (recDay && recDay !== "unknown") return dateInRange(recDay, from, to);
+    const sessionDay = examSessionStartedDateIst(session);
+    if (sessionDay) return dateInRange(sessionDay, from, to);
+    return true;
+  }
+
+  async function countAudioRecordingsInSessions(
+    client,
+    cfg,
+    petId,
+    sessions,
+    filterRecordings,
+    from,
+    to,
+    needHeart,
+    needLung
+  ) {
+    let heart = 0;
+    let lung = 0;
+    for (const s of sessions) {
+      const sid = String(s.id || s.exam_session_id || "").trim();
+      if (!sid) continue;
+      try {
+        const rec = await client.recordingsWithContext(petId, sid, cfg);
+        normalizeRecordings(rec).forEach((r) => {
+          if (filterRecordings && !recordingInReportRange(r, s, from, to)) return;
+          if (needHeart && recordingIsHeart(r)) heart += 1;
+          if (needLung && recordingIsLung(r)) lung += 1;
+        });
+      } catch {
+        /* ignore per-session failures */
+      }
+    }
+    return { heart, lung };
   }
 
   async function discoverSavedDataRange(client, cfg, allPets, animalType, onProgress = null) {
@@ -896,22 +957,24 @@
       }
 
       if (needHeart || needLung) {
-        const sessionsInRange = uniqueSessions.filter((s) =>
-          dateInRange(examSessionStartedDateIst(s), from, to)
+        const { sessions: audioSessions, filterRecordings } = resolveSessionsForAudioScan(
+          uniqueSessions,
+          from,
+          to
         );
-        for (const s of sessionsInRange) {
-          const sid = String(s.id || s.exam_session_id || "").trim();
-          if (!sid) continue;
-          try {
-            const rec = await client.recordingsWithContext(petId, sid, cfg);
-            normalizeRecordings(rec).forEach((r) => {
-              if (needHeart && recordingIsHeart(r)) heart += 1;
-              if (needLung && recordingIsLung(r)) lung += 1;
-            });
-          } catch {
-            /* ignore missing recordings */
-          }
-        }
+        const audioCounts = await countAudioRecordingsInSessions(
+          client,
+          cfg,
+          petId,
+          audioSessions,
+          filterRecordings,
+          from,
+          to,
+          needHeart,
+          needLung
+        );
+        heart += audioCounts.heart;
+        lung += audioCounts.lung;
       }
 
       done += 1;
@@ -1090,11 +1153,13 @@
       }
 
       const sessionNoMap = buildSessionNumberMap(uniqueSessions);
-      const sessionsInRange = uniqueSessions.filter((s) =>
-        dateInRange(examSessionStartedDateIst(s), from, to)
+      const { sessions: audioSessions, filterRecordings } = resolveSessionsForAudioScan(
+        uniqueSessions,
+        from,
+        to
       );
 
-      for (const session of sessionsInRange) {
+      for (const session of audioSessions) {
         const sid = String(session.id || session.exam_session_id || "").trim();
         if (!sid) continue;
         const sessionNo = sessionNoFromMap(sessionNoMap, sid);
@@ -1109,6 +1174,7 @@
           continue;
         }
         for (const rec of normalizeRecordings(recPayload)) {
+          if (filterRecordings && !recordingInReportRange(rec, session, from, to)) continue;
           if (wantHeart && recordingIsHeart(rec)) {
             petItems.push({ petId, petSlug, rec, sessionNo, sid, kind: "heart" });
           } else if (wantLung && recordingIsLung(rec)) {

@@ -158,8 +158,12 @@
       global.__vetApiClient = client;
       if (global.VetLiveApi?.setApiClient) global.VetLiveApi.setApiClient(client);
 
+      global.VetReportsPage?.resetSession?.({ full: true });
       showApp();
       applyDeviceMode(true, deviceId);
+      if (location.hash !== "#/" && location.hash !== "#") {
+        location.hash = "#/";
+      }
       global.VetAppPages?.route?.();
       onDashboardReady();
       global.VetDashboardFilters?.populateAnimalTypes?.();
@@ -178,10 +182,15 @@
   }
 
   function handleLogout() {
+    window.dispatchEvent(new CustomEvent("vet:session-ended"));
+    global.VetReportsPage?.resetSession?.({ full: true });
     clearSession();
     global.__vetApiClient = null;
     if (global.VetLiveApi?.resetStore) {
       global.VetLiveApi.resetStore();
+    }
+    if (location.hash !== "#/" && location.hash !== "#") {
+      location.hash = "#/";
     }
     showLogin();
   }
@@ -211,10 +220,15 @@
         if (nextDevice && nextDevice !== prevDevice) {
           global.VetLiveApi?.resetStore?.();
           global.__vetApiClient = null;
+          global.VetReportsPage?.resetSession?.({ full: true });
           applyDeviceMode(false, nextDevice);
+          if (location.hash !== "#/" && location.hash !== "#") {
+            location.hash = "#/";
+          }
           global.VetAppPages?.route?.();
           onDashboardReady();
           global.VetDashboardFilters?.populateAnimalTypes?.();
+          window.dispatchEvent(new CustomEvent("vet:session-changed", { detail: { deviceId: nextDevice } }));
         }
       } catch {
         /* ignore malformed session */

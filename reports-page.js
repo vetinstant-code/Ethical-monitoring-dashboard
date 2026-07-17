@@ -34,6 +34,7 @@
   let _progressActive = false;
   let _lastCounts = null;
   let _scanCache = null;
+  let _activeDeviceId = null;
 
   const istFmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Kolkata",
@@ -283,10 +284,69 @@
     const grid = document.querySelector(".reports-cards-grid");
     if (trigger) trigger.classList.toggle("is-scanning", active);
     if (grid) grid.classList.toggle("is-loading", active);
-    if (active) {
-      const pctText = pct != null ? `${Math.round(pct)}% · ` : "";
-      setStatusStrip("is-scanning", `${pctText}${label || "Scanning data…"}`);
+    if (!active) return;
+    const pctText = pct != null ? `${Math.round(pct)}% · ` : "";
+    setStatusStrip("is-scanning", `${pctText}${label || "Scanning data…"}`);
+  }
+
+  function progressHide() {
+    _progressActive = false;
+    const block = document.getElementById("reports-progress-block");
+    if (block) {
+      block.hidden = true;
+      block.classList.remove("is-visible");
     }
+    setScanningUi(false);
+    setCardsLoading(false);
+  }
+
+  function clearCountBadges() {
+    const tempBadge = document.getElementById("reports-temp-count");
+    const heartBadge = document.getElementById("reports-heart-count");
+    const lungBadge = document.getElementById("reports-lung-count");
+    if (tempBadge) tempBadge.textContent = "— Records";
+    if (heartBadge) heartBadge.textContent = "— Files";
+    if (lungBadge) lungBadge.textContent = "— Files";
+  }
+
+  /** Drop in-memory scan state so another device/session cannot reuse stale counts. */
+  function resetSession(options = {}) {
+    const { full = false, keepFilters = false } = options;
+    _scanToken += 1;
+    _scanCache = null;
+    _lastCounts = null;
+    _activeDeviceId = null;
+    progressHide();
+    setStatus("");
+    clearCountBadges();
+    updateDownloadButtons(null, false);
+
+    if (full && !keepFilters) {
+      state.quickRange = "today";
+      state.animalType = "all";
+      state.testType = "all";
+      applyQuickRange("today");
+      setDropdownSelection("reports-dd-animal", "reports-animal-panel", "reports-animal-label", "reports-animal-type", "all", "All Animals");
+      setDropdownSelection("reports-dd-test", "reports-test-panel", "reports-test-label", "reports-test-type", "all", "All Tests");
+      syncReportDateHidden();
+      updateRangeLabels();
+      setStatusStrip("", "Open date range to load data");
+      return;
+    }
+
+    if (state.quickRange === "all") {
+      state.from = null;
+    }
+    setStatusStrip("", "Select a date range to scan this device");
+  }
+
+  function onSessionChanged(detail) {
+    const nextDevice = String(detail?.deviceId || currentDeviceId()).trim().toUpperCase();
+    if (_activeDeviceId && nextDevice && _activeDeviceId !== nextDevice) {
+      resetSession({ keepFilters: true });
+      if (state.quickRange === "all") state.from = null;
+    }
+    _activeDeviceId = nextDevice;
   }
 
   function setCardsLoading(active) {
@@ -1010,10 +1070,20 @@
   }
 
   function onShow() {
-    if (!state.from) applyQuickRange("today");
+    const deviceId = currentDeviceId();
+    if (_activeDeviceId && _activeDeviceId !== deviceId) {
+      resetSession({ keepFilters: true });
+      if (state.quickRange === "all") state.from = null;
+    }
+    _activeDeviceId = deviceId;
+
+    if (!state.from && state.quickRange !== "all") applyQuickRange("today");
     else {
       syncDateInputs();
       updateRangeLabels();
+    }
+    if (state.quickRange === "all" && state.from && _scanCache?.deviceId !== deviceId) {
+      state.from = null;
     }
     syncReportDateHidden();
     populateAnimalTypes().then(() => applyAndScan());
@@ -1028,9 +1098,18 @@
     renderHistory();
     updateDownloadButtons(null, false);
     setStatusStrip("", "Open date range to load data");
+    window.addEventListener("vet:session-changed", (e) => onSessionChanged(e.detail || {}));
+    window.addEventListener("vet:session-ended", () => resetSession({ full: true }));
   }
 
   document.addEventListener("DOMContentLoaded", init);
 
-  global.VetReportsPage = { onShow, applyQuickRange, getFilters, refreshCounts, applyAndScan };
+  global.VetReportsPage = {
+    onShow,
+    applyQuickRange,
+    getFilters,
+    refreshCounts,
+    applyAndScan,
+    resetSession,
+  };
 })(window);
