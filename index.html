@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=40" />
+  <link rel="stylesheet" href="styles.css?v=41" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -504,6 +504,7 @@
                 <span>Reset</span>
               </button>
             </div>
+            <p class="reports-filter-mode" id="reports-filter-mode">Active filter: Today</p>
           </div>
 
           <!-- Progress block (visible while scanning / downloading) -->
@@ -658,16 +659,16 @@
   <script src="auth.js?v=12"></script>
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=8"></script>
-  <script src="excel-generator.js?v=12"></script>
+  <script src="excel-generator.js?v=13"></script>
   <script src="dashboard-home.js?v=3"></script>
   <script src="live-api.js?v=28"></script>
   <script src="app-pages.js?v=8"></script>
-  <script src="reports-page.js?v=9"></script>
+  <script src="reports-page.js?v=10"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=13").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

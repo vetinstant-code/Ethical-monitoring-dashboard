@@ -3,6 +3,15 @@
  */
 (function (global) {
   const HISTORY_KEY = "vet_reports_download_history";
+  const MAX_CUSTOM_DAYS = 90;
+  const CHIP_LABELS = {
+    today: "Today",
+    yesterday: "Yesterday",
+    last7: "Last 7 Days",
+    last30: "Last 30 Days",
+    all: "All Data (365 days)",
+    custom: "Custom date range",
+  };
 
   const state = {
     quickRange: "today",
@@ -40,6 +49,18 @@
     } catch {
       return iso;
     }
+  }
+
+  function dayCount(from, to) {
+    if (!from || !to || from > to) return 0;
+    let count = 0;
+    let cur = from;
+    while (cur <= to) {
+      count += 1;
+      if (cur === to) break;
+      cur = addDaysIso(cur, 1);
+    }
+    return count;
   }
 
   function rangeLabel() {
@@ -95,11 +116,36 @@
     state.testType = testEl?.value || "all";
   }
 
+  let _syncingDates = false;
+
   function syncDateInputs() {
+    _syncingDates = true;
     const fromEl = document.getElementById("reports-date-from");
     const toEl = document.getElementById("reports-date-to");
     if (fromEl) fromEl.value = state.from || "";
     if (toEl) toEl.value = state.to || "";
+    _syncingDates = false;
+  }
+
+  function updateFilterModeBanner() {
+    const el = document.getElementById("reports-filter-mode");
+    if (!el) return;
+    const mode = CHIP_LABELS[state.quickRange] || CHIP_LABELS.custom;
+    const days = dayCount(state.from, state.to);
+    el.textContent = `Active filter: ${mode} · ${rangeLabel()} · ${days} day(s) — click Apply Filters to scan`;
+  }
+
+  function validateDateRange() {
+    const from = state.from || todayIso();
+    const to = state.to || todayIso();
+    if (from > to) {
+      return "Start date must be on or before end date.";
+    }
+    const days = dayCount(from, to);
+    if (state.quickRange === "custom" && days > MAX_CUSTOM_DAYS) {
+      return `Custom range is ${days} days (max ${MAX_CUSTOM_DAYS}). Use "Last 30 Days" or "All Data" instead.`;
+    }
+    return null;
   }
 
   function updateRangeLabels() {
@@ -107,6 +153,39 @@
     document.querySelectorAll("[data-card-range]").forEach((el) => {
       el.textContent = label;
     });
+    updateFilterModeBanner();
+  }
+
+  function ensureProgressBlock() {
+    let block = document.getElementById("reports-progress-block");
+    if (block) return block;
+    const anchor = document.querySelector(".reports-toolbar") || document.querySelector(".reports-page");
+    if (!anchor) return null;
+    block = document.createElement("div");
+    block.className = "reports-progress-block";
+    block.id = "reports-progress-block";
+    block.innerHTML = `
+      <div class="reports-progress-header">
+        <span class="reports-progress-label" id="reports-progress-label">Working…</span>
+        <span class="reports-progress-pct" id="reports-progress-pct">0%</span>
+      </div>
+      <div class="reports-progress-track">
+        <div class="reports-progress-fill" id="reports-progress-fill" style="width:0%"></div>
+      </div>
+      <div class="reports-progress-log" id="reports-progress-log"></div>`;
+    anchor.insertAdjacentElement("afterend", block);
+    return block;
+  }
+
+  function setApplyButtonProgress(pct, label) {
+    const btn = document.getElementById("reports-apply-filters");
+    if (!btn) return;
+    if (pct == null) {
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg><span>Apply Filters</span>`;
+      return;
+    }
+    const span = btn.querySelector("span");
+    if (span) span.textContent = `${Math.round(pct)}% · ${label || "Scanning"}`;
   }
 
   /* ---- progress bar helpers ---- */
@@ -114,7 +193,7 @@
   let _progressActive = false;
 
   function progressShow(label, pct) {
-    const block = document.getElementById("reports-progress-block");
+    const block = ensureProgressBlock();
     const labelEl = document.getElementById("reports-progress-label");
     const pctEl = document.getElementById("reports-progress-pct");
     const fill = document.getElementById("reports-progress-fill");
@@ -123,12 +202,14 @@
     _progressActive = true;
     block.hidden = false;
     block.removeAttribute("hidden");
+    block.classList.add("is-visible");
     block.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (labelEl) labelEl.textContent = label || "Working…";
     const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
     if (pctEl) pctEl.textContent = `${clamped}%`;
     if (fill) fill.style.width = `${clamped}%`;
     if (log && pct === 0) log.innerHTML = "";
+    setApplyButtonProgress(clamped, label);
   }
 
   function progressUpdate(label, pct) {
@@ -136,10 +217,13 @@
     const labelEl = document.getElementById("reports-progress-label");
     const pctEl = document.getElementById("reports-progress-pct");
     const fill = document.getElementById("reports-progress-fill");
+    const block = document.getElementById("reports-progress-block");
+    if (block) block.classList.add("is-visible");
     if (labelEl) labelEl.textContent = label || "Working…";
     const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
     if (pctEl) pctEl.textContent = `${clamped}%`;
     if (fill) fill.style.width = `${clamped}%`;
+    setApplyButtonProgress(clamped, label);
   }
 
   function progressLog(msg, kind) {
@@ -159,6 +243,7 @@
       if (fill) fill.style.background = "#dc2626";
     }
     _progressActive = false;
+    setApplyButtonProgress(null);
   }
 
   function setStatus(msg, isError) {
@@ -509,12 +594,14 @@
     });
 
     document.getElementById("reports-date-from")?.addEventListener("change", (e) => {
+      if (_syncingDates) return;
       state.from = e.target.value;
       state.quickRange = "custom";
       document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
       updateRangeLabels();
     });
     document.getElementById("reports-date-to")?.addEventListener("change", (e) => {
+      if (_syncingDates) return;
       state.to = e.target.value;
       state.quickRange = "custom";
       document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
@@ -530,13 +617,18 @@
 
     document.getElementById("reports-apply-filters")?.addEventListener("click", async () => {
       readFiltersFromUi();
-      if (state.from && state.to && state.from > state.to) {
-        setStatus("Start date must be on or before end date.", true);
+      const rangeError = validateDateRange();
+      if (rangeError) {
+        setStatus(rangeError, true);
+        progressShow("Range too large", 0);
+        progressLog(rangeError, "error");
+        progressDone("Fix date range and try again", true);
         return;
       }
       applyFiltersToReports();
       const applyBtn = document.getElementById("reports-apply-filters");
       if (applyBtn) applyBtn.disabled = true;
+      progressShow("Starting scan…", 1);
       try {
         await refreshCounts();
         setStatus(`Filters applied · ${rangeLabel()}`);
@@ -544,6 +636,7 @@
         setStatus(err.message || String(err), true);
       } finally {
         if (applyBtn) applyBtn.disabled = false;
+        setApplyButtonProgress(null);
       }
     });
 

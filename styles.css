@@ -1895,12 +1895,24 @@ body.reports-mode .page-back-btn {
   font-weight: 700;
 }
 
+.reports-filter-mode {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e40af;
+}
+
 .reports-progress-block {
   margin: 0 0 20px;
   background: #f0f4ff;
-  border: 1px solid #c7d7fd;
+  border: 2px solid #3b82f6;
   border-radius: 10px;
   padding: 14px 18px 12px;
+  display: none;
+}
+
+.reports-progress-block.is-visible {
+  display: block;
 }
 
 .reports-progress-block[hidden] {

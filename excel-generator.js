@@ -723,9 +723,11 @@
     return { client, cfg };
   }
 
-  async function resolvePetsForDateRange(client, from, to, allPets, animalType) {
+  async function resolvePetsForDateRange(client, from, to, allPets, animalType, onProgress = null) {
+    const days = enumerateDays(from, to);
     const petMap = new Map();
-    for (const day of enumerateDays(from, to)) {
+    let doneDays = 0;
+    await mapPool(days, 8, async (day) => {
       let list = [];
       if (global.VetLiveApi?.resolvePetsForDate) {
         const resolved = await global.VetLiveApi.resolvePetsForDate(client, day, allPets);
@@ -739,7 +741,12 @@
         const id = String(p.pet_id || p.id || "").trim();
         if (id) petMap.set(id, p);
       });
-    }
+      doneDays += 1;
+      onProgress?.(
+        18 + Math.round((doneDays / Math.max(days.length, 1)) * 12),
+        `Loading daily lists ${doneDays}/${days.length}`
+      );
+    });
     return [...petMap.values()];
   }
 
@@ -762,8 +769,9 @@
     onProgress?.(12, "Loading animal list…");
     const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
     onProgress?.(18, "Resolving animals in date range…");
-    const pets = await resolvePetsForDateRange(client, from, to, allPets, animalType);
+    const pets = await resolvePetsForDateRange(client, from, to, allPets, animalType, onProgress);
     logger.log(`Scanning ${pets.length} animal(s)…`);
+    onProgress?.(32, `Scanning ${pets.length} animal(s)…`);
 
     let temperature = 0;
     let heart = 0;
@@ -824,7 +832,7 @@
       done += 1;
       const name = pet.pet_name || pet.name || petId;
       onProgress?.(
-        18 + Math.round((done / total) * 80),
+        32 + Math.round((done / total) * 66),
         `Scanned ${done}/${total} · ${name}`
       );
     });
