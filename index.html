@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=46" />
+  <link rel="stylesheet" href="styles.css?v=47" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -370,15 +370,6 @@
                 <tbody id="cv-compare-body"><tr><td colspan="13" class="empty-state">Loading…</td></tr></tbody>
               </table>
             </div>
-            <h4 class="cv-subtable-title">Validation Summary Statistics</h4>
-            <div class="rounds-table-scroller">
-              <table class="rounds-log-table cv-stats-table">
-                <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-                <tbody id="cv-validation-stats-body">
-                  <tr><td colspan="2" class="empty-state">Loading…</td></tr>
-                </tbody>
-              </table>
-            </div>
           </article>
         </section>
 
@@ -695,7 +686,7 @@
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=9"></script>
   <script src="excel-generator.js?v=19"></script>
-  <script src="dashboard-home.js?v=5"></script>
+  <script src="dashboard-home.js?v=6"></script>
   <script src="live-api.js?v=32"></script>
   <script src="app-pages.js?v=10"></script>
   <script src="reports-page.js?v=18"></script>
@@ -703,7 +694,7 @@
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=27").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=28").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

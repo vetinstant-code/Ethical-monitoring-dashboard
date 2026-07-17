@@ -2373,17 +2373,7 @@ body.reports-mode .page-back-btn {
 }
 
 .cv-table-scroll--compare {
-  max-height: 360px;
-}
-
-.cv-stats-table {
-  max-width: 560px;
-}
-
-.cv-stats-table td:first-child {
-  width: 55%;
-  color: var(--text-muted);
-  font-size: 13px;
+  max-height: 480px;
 }
 
 .cv-pass-ok {
@@ -2396,10 +2386,21 @@ body.reports-mode .page-back-btn {
   font-weight: 700;
 }
 
+.cv-compare-table {
+  text-align: center;
+}
+
 .cv-compare-table th,
 .cv-compare-table td {
+  text-align: center;
   white-space: nowrap;
   font-size: 12px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.cv-compare-table .empty-state {
+  text-align: center;
 }
 
 .cv-row-2 {

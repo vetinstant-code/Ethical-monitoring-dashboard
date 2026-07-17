@@ -29,39 +29,6 @@
     return SPECIES_STYLE[key] || { color: "#64748b", icon: "🐾" };
   }
 
-  function mean(nums) {
-    const v = nums.filter((n) => Number.isFinite(n));
-    if (!v.length) return null;
-    return v.reduce((a, b) => a + b, 0) / v.length;
-  }
-
-  function stdev(nums) {
-    const v = nums.filter((n) => Number.isFinite(n));
-    if (v.length < 2) return 0;
-    const m = mean(v);
-    const variance = v.reduce((s, x) => s + (x - m) ** 2, 0) / (v.length - 1);
-    return Math.sqrt(variance);
-  }
-
-  function rSquared(exam, ref) {
-    const pairs = exam
-      .map((e, i) => [e, ref[i]])
-      .filter(([e, r]) => Number.isFinite(e) && Number.isFinite(r));
-    if (pairs.length < 2) return null;
-    const xs = pairs.map((p) => p[0]);
-    const ys = pairs.map((p) => p[1]);
-    const mx = mean(xs);
-    const my = mean(ys);
-    let ssRes = 0;
-    let ssTot = 0;
-    pairs.forEach(([x, y]) => {
-      ssRes += (y - x) ** 2;
-      ssTot += (y - my) ** 2;
-    });
-    if (ssTot === 0) return 1;
-    return 1 - ssRes / ssTot;
-  }
-
   function destroyChart(id) {
     if (charts[id]) {
       charts[id].destroy();
@@ -215,64 +182,12 @@
     });
   }
 
-  function renderValidationStats(rows) {
-    const body = document.getElementById("cv-validation-stats-body");
-    if (!body) return;
-    const valid = rows.filter((r) => r.examD != null && r.reference != null && r.errMax != null);
-    if (!valid.length) {
-      body.innerHTML = `<tr><td colspan="2" class="empty-state">No validation statistics for this date.</td></tr>`;
-      return;
-    }
-
-    const errMaxes = valid.map((r) => r.errMax);
-    const errMeans = valid.map((r) => r.metrics?.errMean).filter((n) => n != null);
-    const examVals = valid.map((r) => r.examD);
-    const refVals = valid.map((r) => r.reference);
-    const diffs = valid.map((r) => r.examD - r.reference);
-    const passRows = valid.filter((r) => r.acceptancePass);
-    const failRows = valid.length - passRows.length;
-    const mae = mean(errMaxes);
-    const sd = stdev(diffs);
-    const r2 = rSquared(examVals, refVals);
-    const overallPass = passRows.length === valid.length;
-
-    const statsRows = [
-      ["Valid comparison sessions", String(valid.length)],
-      ["Sessions PASS (Err Max ≤ 0.2 °C)", String(passRows.length)],
-      ["Sessions FAIL (Err Max > 0.2 °C)", String(failRows.length)],
-      ["Mean Error (ExamD − Reference)", mean(diffs) != null ? `${mean(diffs).toFixed(2)} °C` : "—"],
-      ["MAE (avg Err Max)", mae != null ? `${mae.toFixed(2)} °C` : "—"],
-      ["SD (Standard Deviation)", sd != null ? `${sd.toFixed(2)} °C` : "—"],
-      ["R² (Coefficient of Determination)", r2 != null ? r2.toFixed(2) : "—"],
-      ["Avg Err Mean (from server)", errMeans.length ? `${mean(errMeans).toFixed(2)} °C` : "—"],
-      ["Acceptance Criteria (±0.2 °C)", overallPass ? "PASS" : "FAIL"],
-    ];
-
-    body.innerHTML = statsRows
-      .map(([label, value]) => {
-        const isPassRow = label.startsWith("Acceptance");
-        const valueCls =
-          isPassRow && value === "PASS"
-            ? "cv-pass-ok"
-            : isPassRow && value === "FAIL"
-              ? "cv-pass-fail"
-              : "";
-        return `
-        <tr>
-          <td>${escapeHtml(label)}</td>
-          <td class="vitals-text-bold ${valueCls}">${escapeHtml(value)}</td>
-        </tr>`;
-      })
-      .join("");
-  }
-
   function renderCompareTable(rows) {
     const body = document.getElementById("cv-compare-body");
     if (!body) return;
     const valid = rows.filter((r) => r.examD != null && r.reference != null && r.errMax != null);
     if (!valid.length) {
       body.innerHTML = `<tr><td colspan="13" class="empty-state">No reference comparison data for this date.</td></tr>`;
-      renderValidationStats([]);
       return;
     }
 
@@ -313,7 +228,6 @@
       });
     });
 
-    renderValidationStats(valid);
   }
 
   function renderNotes(notes, dateLabel) {
