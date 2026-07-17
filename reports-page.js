@@ -433,6 +433,11 @@
     rows.unshift(entry);
     saveHistory(rows);
     renderHistory();
+    scrollToHistory();
+  }
+
+  function scrollToHistory() {
+    document.querySelector(".reports-history-card")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
   function formatBytes(n) {
@@ -485,6 +490,7 @@
       testType: state.testType,
       deviceId,
       cachedPets: cacheOk ? _scanCache.pets : null,
+      daysWithTemperature: cacheOk ? _scanCache.daysWithTemperature : null,
       expectedCount,
     };
   }
@@ -569,6 +575,7 @@
         animalType: state.animalType || "all",
         deviceId: currentDeviceId(),
         pets: counts.resolvedPets || [],
+        daysWithTemperature: counts.daysWithTemperature || [],
         counts,
       };
       updateDownloadButtons(counts, false);
@@ -831,7 +838,8 @@
       actionHtml: '<span class="reports-hist-done">Downloaded</span>',
     });
     progressDone(
-      `Complete ZIP downloaded · ${result.tempFiles} Excel · ${result.audioSaved} audio file(s)`
+      `Complete ZIP downloaded · ${result.tempFiles} Excel · ${result.audioSaved} audio file(s)` +
+        (result.audioError ? " · audio partial" : "")
     );
     setStatus(
       `Complete export downloaded · ${result.tempFiles} temperature file(s), ${result.audioSaved} audio file(s) · ${rangeLabel()}`

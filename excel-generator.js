@@ -859,6 +859,7 @@
     let temperature = 0;
     let heart = 0;
     let lung = 0;
+    const tempDays = new Set();
     const days = enumerateDays(from, to);
     const total = Math.max(pets.length, 1);
     let done = 0;
@@ -885,7 +886,9 @@
           const summaryResp = await client.petTemperatureSummaryWithContext(petId, cfg);
           const summaryRows = normalizeSummaries(summaryResp);
           for (const day of days) {
-            temperature += countTemperatureRowsForDay(uniqueSessions, summaryRows, day);
+            const dayRows = countTemperatureRowsForDay(uniqueSessions, summaryRows, day);
+            temperature += dayRows;
+            if (dayRows > 0) tempDays.add(day);
           }
         } catch (err) {
           logger.warn?.(`Temperature count failed for ${petId}: ${err.message || err}`);
@@ -920,7 +923,18 @@
     });
 
     onProgress?.(100, "Scan complete");
-    return { temperature, heart, lung, pets: pets.length, resolvedPets: pets };
+    return {
+      temperature,
+      heart,
+      lung,
+      pets: pets.length,
+      resolvedPets: pets,
+      daysWithTemperature: [...tempDays].sort(),
+    };
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   function slugifyName(value) {
@@ -1265,24 +1279,30 @@
     const deviceId = filters.deviceId;
     if (!from || !to || from > to) throw new Error("Invalid date range.");
 
-    const days = enumerateDays(from, to);
+    const allDays = enumerateDays(from, to);
+    const tempDays = Array.isArray(filters.daysWithTemperature) && filters.daysWithTemperature.length
+      ? filters.daysWithTemperature
+      : allDays;
     const zip = new global.JSZip();
     let tempFiles = 0;
     let tempRows = 0;
+    let tempErrors = 0;
 
     onProgress?.(2, "Preparing complete export…");
-    logger.log(`Export range: ${from} → ${to} (${days.length} day(s))`);
+    logger.log(`Export range: ${from} → ${to} (${allDays.length} day(s) total)`);
+    logger.log(`Building temperature Excel for ${tempDays.length} day(s) with data…`);
 
-    for (let i = 0; i < days.length; i++) {
-      const day = days[i];
-      const pct = 2 + Math.round((i / Math.max(days.length, 1)) * 38);
-      onProgress?.(pct, `Temperature Excel ${i + 1}/${days.length} · ${day}`);
+    for (let i = 0; i < tempDays.length; i++) {
+      const day = tempDays[i];
+      const pct = 2 + Math.round((i / Math.max(tempDays.length, 1)) * 38);
+      onProgress?.(pct, `Temperature Excel ${i + 1}/${tempDays.length} · ${day}`);
       logger.log(`Building Excel for ${day}…`);
       try {
-        const result = await compileDailySummary(day, deviceId, logger, {
-          animalType,
-          download: false,
-        });
+        const result = await fetchWithRetry(
+          () => compileDailySummary(day, deviceId, logger, { animalType, download: false }),
+          2,
+          1500
+        );
         const rows = Number(result?.rows_written) || 0;
         if (rows > 0 && result.buffer) {
           zip.file(`temperature/${result.filename}`, result.buffer);
@@ -1293,53 +1313,66 @@
           logger.log(`${day}: no rows — skipped`);
         }
       } catch (err) {
+        tempErrors += 1;
         logger.warn?.(`${day}: ${err.message || err}`);
       }
+      if (i < tempDays.length - 1) await sleep(250);
     }
 
     onProgress?.(42, "Collecting audio files…");
-    const { client, cfg } = await createReportClient(deviceId, { timeoutMs: 90000 });
-    const audioItems = await listAudioItemsForExport(
-      client,
-      cfg,
-      filters,
-      ["heart", "lung"],
-      logger,
-      (pct, label) => onProgress?.(42 + Math.round(pct * 0.18), label || "Collecting audio…")
-    );
-
     let audioSaved = 0;
     let audioSkipped = 0;
-    if (audioItems.length) {
-      const audioResult = await addAudioFilesToZip(
-        zip,
+    let audioError = null;
+    try {
+      const { client, cfg } = await createReportClient(deviceId, { timeoutMs: 90000 });
+      const audioItems = await listAudioItemsForExport(
         client,
         cfg,
-        audioItems,
+        filters,
+        ["heart", "lung"],
         logger,
-        (pct, label) => onProgress?.(60 + Math.round(pct * 0.3), label || "Downloading audio…"),
-        60,
-        30
+        (pct, label) => onProgress?.(42 + Math.round(pct * 0.18), label || "Collecting audio…")
       );
-      audioSaved = audioResult.saved;
-      audioSkipped = audioResult.skipped;
-    } else {
-      logger.log("No heart/lung recordings in range.");
+
+      if (audioItems.length) {
+        const audioResult = await addAudioFilesToZip(
+          zip,
+          client,
+          cfg,
+          audioItems,
+          logger,
+          (pct, label) => onProgress?.(60 + Math.round(pct * 0.3), label || "Downloading audio…"),
+          60,
+          30
+        );
+        audioSaved = audioResult.saved;
+        audioSkipped = audioResult.skipped;
+      } else {
+        logger.log("No heart/lung recordings in range.");
+      }
+    } catch (err) {
+      audioError = err.message || String(err);
+      logger.warn?.(`Audio export skipped: ${audioError}`);
     }
 
     if (!tempFiles && !audioSaved) {
-      throw new Error("Nothing to export — no temperature rows or audio files in the selected range.");
+      throw new Error(
+        tempErrors || audioError
+          ? `Export failed — API errors while fetching data. Wait 30 seconds and try again, or use a shorter date range.`
+          : "Nothing to export — no temperature rows or audio files in the selected range."
+      );
     }
 
     zip.file(
       "export_manifest.txt",
       [
-        `Device: ${deviceId || cfg.deviceId}`,
+        `Device: ${deviceId}`,
         `Range: ${from} → ${to}`,
-        `Temperature files: ${tempFiles} (${tempRows} rows)`,
+        `Temperature files: ${tempFiles} (${tempRows} rows, ${tempErrors} day(s) failed)`,
         `Audio files: ${audioSaved} (${audioSkipped} skipped)`,
+        audioError ? `Audio note: ${audioError}` : "",
         `Generated: ${new Date().toISOString()}`,
-      ].join("\n")
+      ].filter(Boolean).join("\n")
     );
 
     onProgress?.(92, "Compressing complete ZIP…");
@@ -1348,7 +1381,7 @@
     const filename = `complete_export_${from}_${to}_${stamp}.zip`;
     triggerBlobDownload(blob, filename);
     onProgress?.(100, "Download started");
-    return { tempFiles, tempRows, audioSaved, audioSkipped, filename };
+    return { tempFiles, tempRows, audioSaved, audioSkipped, tempErrors, audioError, filename };
   }
 
   /**
