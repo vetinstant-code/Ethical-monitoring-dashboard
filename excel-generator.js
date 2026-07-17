@@ -2089,15 +2089,23 @@
       ws.getCell(rowIdx, 6).value = rowVal.pet_name;
 
       const blocks = rowVal.chosen_t_blocks;
-      ws.getCell(rowIdx, 7).value = blocks.t1[0];
-      ws.getCell(rowIdx, 8).value = blocks.t1[1];
-      ws.getCell(rowIdx, 9).value = blocks.t1[2];
-      ws.getCell(rowIdx, 10).value = blocks.t2[0];
-      ws.getCell(rowIdx, 11).value = blocks.t2[1];
-      ws.getCell(rowIdx, 12).value = blocks.t2[2];
-      ws.getCell(rowIdx, 13).value = blocks.t3[0];
-      ws.getCell(rowIdx, 14).value = blocks.t3[1];
-      ws.getCell(rowIdx, 15).value = blocks.t3[2];
+      // Write ambient / forehead / body with full API precision (template often forces 0.00).
+      const irGridCols = [
+        [7, blocks.t1[0]],
+        [8, blocks.t1[1]],
+        [9, blocks.t1[2]],
+        [10, blocks.t2[0]],
+        [11, blocks.t2[1]],
+        [12, blocks.t2[2]],
+        [13, blocks.t3[0]],
+        [14, blocks.t3[1]],
+        [15, blocks.t3[2]],
+      ];
+      irGridCols.forEach(([col, value]) => {
+        const cell = ws.getCell(rowIdx, col);
+        cell.value = Number(value) || 0;
+        cell.numFmt = "0.0000000";
+      });
 
       const refsC = rowVal.refs_c;
       const rectalC = rowVal.rectal_c;
@@ -2122,6 +2130,9 @@
       ws.getCell(rowIdx, _daily_summary_col(23)).value = blocks.t1[2];
       ws.getCell(rowIdx, _daily_summary_col(24)).value = blocks.t2[2];
       ws.getCell(rowIdx, _daily_summary_col(25)).value = blocks.t3[2];
+      [_daily_summary_col(23), _daily_summary_col(24), _daily_summary_col(25)].forEach((col) => {
+        ws.getCell(rowIdx, col).numFmt = "0.0000000";
+      });
 
       const irTriple = [Number(blocks.t1[2]) || 0, Number(blocks.t2[2]) || 0, Number(blocks.t3[2]) || 0];
       const hasIr = irTriple.some((v) => v > 0);
