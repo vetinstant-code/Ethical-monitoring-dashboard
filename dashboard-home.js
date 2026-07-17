@@ -143,8 +143,8 @@
   }
 
   function fmtTemp(v) {
-    if (v == null || !Number.isFinite(v)) return "—";
-    return v.toFixed(2);
+    if (v == null || !Number.isFinite(Number(v))) return "0.00";
+    return Number(v).toFixed(2);
   }
 
   function renderRecentCases(cases) {
@@ -185,7 +185,7 @@
   function renderCompareTable(rows) {
     const body = document.getElementById("cv-compare-body");
     if (!body) return;
-    const valid = rows.filter((r) => r.examD != null && r.reference != null && r.errMax != null);
+    const valid = (rows || []).filter((r) => r && r.metrics);
     if (!valid.length) {
       body.innerHTML = `<tr><td colspan="15" class="empty-state">No reference comparison data for this date.</td></tr>`;
       return;
@@ -194,9 +194,12 @@
     body.innerHTML = valid
       .map((r, idx) => {
         const m = r.metrics || {};
-        const pass = r.acceptancePass === true;
-        const passLabel = pass ? "PASS" : "FAIL";
-        const passCls = pass ? "cv-pass-ok" : "cv-pass-fail";
+        const pass = r.acceptancePass;
+        const passLabel = pass === true ? "PASS" : pass === false ? "FAIL" : "—";
+        const passCls =
+          pass === true ? "cv-pass-ok" : pass === false ? "cv-pass-fail" : "";
+        const errCls =
+          pass === true ? "cv-pass-ok" : pass === false ? "cv-pass-fail" : "";
         return `
         <tr class="activity-row-clickable" data-pet-id="${escapeHtml(r.id)}" tabindex="0" role="link">
           <td>${idx + 1}</td>
@@ -212,7 +215,7 @@
           <td>${fmtTemp(m.sd)}</td>
           <td>${fmtTemp(m.range)}</td>
           <td>${fmtTemp(m.errMean)}</td>
-          <td class="vitals-text-bold ${pass ? "cv-pass-ok" : "cv-pass-fail"}">${fmtTemp(r.errMax)}</td>
+          <td class="vitals-text-bold ${errCls}">${fmtTemp(r.errMax)}</td>
           <td class="vitals-text-bold ${passCls}">${passLabel}</td>
         </tr>`;
       })

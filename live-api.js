@@ -244,6 +244,30 @@
     return { t1, t2, t3, mean, max, sd, range, reference, errMean, errMax };
   }
 
+  /** Missing fields display as 0 so partial sessions still fill the table. */
+  function zeroFillMetrics(metrics) {
+    const m = metrics || {};
+    return {
+      t1: m.t1 ?? 0,
+      t2: m.t2 ?? 0,
+      t3: m.t3 ?? 0,
+      mean: m.mean ?? 0,
+      max: m.max ?? 0,
+      sd: m.sd ?? 0,
+      range: m.range ?? 0,
+      reference: m.reference ?? 0,
+      errMean: m.errMean ?? 0,
+      errMax: m.errMax ?? 0,
+    };
+  }
+
+  function hasAnyComparisonValue(metrics) {
+    if (!metrics) return false;
+    return [metrics.t1, metrics.t2, metrics.t3, metrics.mean, metrics.max, metrics.reference].some(
+      (v) => v != null
+    );
+  }
+
   function petSourceRecord(pet, dailyPet) {
     const petId = String(pet?.pet_id || pet?.id || "").trim();
     const full = store.pets.find((p) => String(p.pet_id || p.id) === petId);
@@ -300,16 +324,16 @@
   function buildComparisonRow(petId, meta, sid, sessionById, summaries) {
     const irSummary = pickSessionSummary(summaries, sid, true);
     const rectSummary = pickSessionSummary(summaries, sid, false);
-    const refSource = irSummary || rectSummary;
-    if (!refSource) return null;
-
-    const reference = refFromSummary(refSource);
-    if (reference == null || reference <= 0) return null;
-
     const primary = irSummary || rectSummary;
-    const metrics = metricsFromSummary(primary, refSource);
-    if (!metrics || metrics.mean == null) return null;
-    if (metrics.errMax == null) return null;
+    if (!primary) return null;
+
+    const raw = metricsFromSummary(primary, irSummary || rectSummary);
+    if (!hasAnyComparisonValue(raw)) return null;
+
+    const metrics = zeroFillMetrics(raw);
+    // PASS/FAIL only when both ExamD and reference exist; otherwise incomplete (null).
+    const canJudge = raw.reference != null && raw.errMax != null && (raw.mean != null || raw.max != null);
+    const acceptancePass = canJudge ? raw.errMax <= 0.2 : null;
 
     const s = sessionById[sid];
     const ts =
@@ -324,10 +348,11 @@
       species: meta.species,
       sessionId: sid,
       examD: metrics.mean,
-      reference,
+      reference: metrics.reference,
       metrics,
       errMax: metrics.errMax,
-      acceptancePass: metrics.errMax <= 0.2,
+      acceptancePass,
+      incomplete: !canJudge,
       timestamp: ts,
     };
   }
@@ -626,14 +651,12 @@
 
       // Recent Cases is built only from comparison rows (exact same sessions).
       for (const row of local.comparisons) {
-        const mean = row.metrics?.mean;
+        const mean = row.incomplete ? null : row.metrics?.mean;
         let statusLabel = "Completed";
         let statusClass = "stable";
-        if (mean != null) {
-          if (mean > 38.6 || mean < 37.2) {
-            statusLabel = mean > 38.6 ? "Critical" : "Low";
-            statusClass = "critical";
-          }
+        if (mean != null && mean > 0 && (mean > 38.6 || mean < 37.2)) {
+          statusLabel = mean > 38.6 ? "Critical" : "Low";
+          statusClass = "critical";
         }
         const d = row.timestamp ? new Date(row.timestamp) : null;
         const timeStr = d
@@ -967,10 +990,10 @@
 
       // Recent Cases = exact same sessions as Reference vs ExamD (1:1).
       const recentCases = comparisons.map((row) => {
-        const mean = row.metrics?.mean;
+        const mean = row.incomplete ? null : row.metrics?.mean;
         let statusLabel = "Completed";
         let statusClass = "stable";
-        if (mean != null && (mean > 38.6 || mean < 37.2)) {
+        if (mean != null && mean > 0 && (mean > 38.6 || mean < 37.2)) {
           statusLabel = mean > 38.6 ? "Critical" : "Low";
           statusClass = "critical";
         }
