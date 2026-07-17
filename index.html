@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=42" />
+  <link rel="stylesheet" href="styles.css?v=43" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -467,7 +467,7 @@
                   <button type="button" class="reports-dd-option" data-range="yesterday">Yesterday</button>
                   <button type="button" class="reports-dd-option" data-range="last7">Last 7 Days</button>
                   <button type="button" class="reports-dd-option" data-range="last30">Last 30 Days</button>
-                  <button type="button" class="reports-dd-option" data-range="all">All Data (365 days)</button>
+                  <button type="button" class="reports-dd-option" data-range="all">All saved data</button>
                   <div class="reports-dd-custom">
                     <p class="reports-dd-custom-title">Custom range</p>
                     <div class="reports-dd-custom-dates">
@@ -480,16 +480,43 @@
                 </div>
               </div>
 
-              <select id="reports-animal-type" class="reports-select" aria-label="Animal type">
-                <option value="all">All Animals</option>
-              </select>
+              <div class="reports-dd" id="reports-dd-animal">
+                <button type="button" class="reports-filter-pill reports-dd-trigger" id="reports-animal-trigger" aria-haspopup="listbox" aria-expanded="false">
+                  <svg class="reports-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M4.5 16.5c-1.5 1.26-2.5 3.19-2.5 5.5h20c0-2.31-1-4.24-2.5-5.5"></path>
+                    <path d="M12 2a5 5 0 1 0 0 10 5 5 0 1 0 0-10z"></path>
+                  </svg>
+                  <span class="reports-dd-label" id="reports-animal-label">All Animals</span>
+                  <svg class="reports-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="reports-dd-panel" id="reports-animal-panel" role="listbox" hidden>
+                  <button type="button" class="reports-dd-option is-active" data-value="all">All Animals</button>
+                </div>
+              </div>
 
-              <select id="reports-test-type" class="reports-select" aria-label="Test type">
-                <option value="all">All Tests</option>
-                <option value="temperature">Temperature</option>
-                <option value="heart">Heart Sound</option>
-                <option value="lung">Lung Sound</option>
-              </select>
+              <div class="reports-dd" id="reports-dd-test">
+                <button type="button" class="reports-filter-pill reports-dd-trigger" id="reports-test-trigger" aria-haspopup="listbox" aria-expanded="false">
+                  <svg class="reports-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                  </svg>
+                  <span class="reports-dd-label" id="reports-test-label">All Tests</span>
+                  <svg class="reports-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="reports-dd-panel" id="reports-test-panel" role="listbox" hidden>
+                  <button type="button" class="reports-dd-option is-active" data-value="all">All Tests</button>
+                  <button type="button" class="reports-dd-option" data-value="temperature">Temperature</button>
+                  <button type="button" class="reports-dd-option" data-value="heart">Heart Sound</button>
+                  <button type="button" class="reports-dd-option" data-value="lung">Lung Sound</button>
+                </div>
+              </div>
+
+              <!-- hidden values for compatibility -->
+              <input type="hidden" id="reports-animal-type" value="all" />
+              <input type="hidden" id="reports-test-type" value="all" />
 
               <button type="button" class="reports-btn reports-btn-ghost" id="reports-reset-filters">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -542,7 +569,7 @@
                   Excel
                 </span>
               </div>
-              <button type="button" class="reports-download-btn reports-download-btn--temp" data-download="temperature">Download</button>
+              <button type="button" class="reports-download-btn reports-download-btn--temp" data-download="temperature" disabled>No data yet</button>
             </article>
 
             <article class="reports-dl-card reports-dl-card--heart">
@@ -568,7 +595,7 @@
                   ZIP
                 </span>
               </div>
-              <button type="button" class="reports-download-btn reports-download-btn--heart" data-download="heart">Download</button>
+              <button type="button" class="reports-download-btn reports-download-btn--heart" data-download="heart" disabled title="Audio ZIP export API not connected yet">Coming soon</button>
             </article>
 
             <article class="reports-dl-card reports-dl-card--lung">
@@ -597,7 +624,7 @@
                   ZIP
                 </span>
               </div>
-              <button type="button" class="reports-download-btn reports-download-btn--lung" data-download="lung">Download</button>
+              <button type="button" class="reports-download-btn reports-download-btn--lung" data-download="lung" disabled title="Audio ZIP export API not connected yet">Coming soon</button>
             </article>
           </div>
 
@@ -611,10 +638,10 @@
               </div>
               <div>
                 <h3>Complete Data Export</h3>
-                <p>Download all data (Temperature, Heart Sound, Lung Sound and Metadata) in a single ZIP file.</p>
+                <p>Download temperature Excel now. Heart/lung audio ZIP when API is connected.</p>
               </div>
             </div>
-            <button type="button" class="reports-complete-btn" id="reports-download-complete">Download Complete ZIP</button>
+            <button type="button" class="reports-complete-btn" id="reports-download-complete" disabled>No data yet</button>
           </div>
 
           <!-- Download history -->
@@ -657,16 +684,16 @@
   <script src="auth.js?v=12"></script>
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=8"></script>
-  <script src="excel-generator.js?v=13"></script>
+  <script src="excel-generator.js?v=14"></script>
   <script src="dashboard-home.js?v=3"></script>
   <script src="live-api.js?v=28"></script>
   <script src="app-pages.js?v=8"></script>
-  <script src="reports-page.js?v=11"></script>
+  <script src="reports-page.js?v=12"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=14").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=15").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

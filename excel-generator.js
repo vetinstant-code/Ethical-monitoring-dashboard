@@ -723,6 +723,62 @@
     return { client, cfg };
   }
 
+  async function discoverSavedDataRange(client, cfg, allPets, animalType, onProgress = null) {
+    const today = global.VetLiveApi?.todayIsoIst?.() || formatDateIso(new Date());
+    const pets = (allPets || []).filter((p) => matchesAnimalFilter(p, animalType));
+    let minDate = null;
+    let maxDate = null;
+    let done = 0;
+    const total = Math.max(pets.length, 1);
+
+    await mapPool(pets, 8, async (pet) => {
+      const petId = String(pet.pet_id || pet.id || "").trim();
+      if (!petId) {
+        done += 1;
+        return;
+      }
+      try {
+        const sessionsResponse = await client.examSessionsWithContext(petId, cfg);
+        const sessions = Array.isArray(sessionsResponse)
+          ? sessionsResponse
+          : sessionsResponse?.exam_sessions || [];
+        dedupeSessions(sessions).forEach((s) => {
+          const d = examSessionStartedDateIst(s);
+          if (!d) return;
+          if (!minDate || d < minDate) minDate = d;
+          if (!maxDate || d > maxDate) maxDate = d;
+        });
+      } catch {
+        /* ignore per-pet failures */
+      }
+      done += 1;
+      onProgress?.(
+        Math.round((done / total) * 100),
+        `Finding saved dates ${done}/${total}`
+      );
+    });
+
+    if (!minDate || !maxDate) {
+      const fallbackFrom = (() => {
+        const d = new Date(`${today}T12:00:00`);
+        d.setDate(d.getDate() - 29);
+        return formatDateIso(d);
+      })();
+      return { from: fallbackFrom, to: today, days: 30, source: "fallback" };
+    }
+
+    if (maxDate > today) maxDate = today;
+    const capFrom = (() => {
+      const d = new Date(`${today}T12:00:00`);
+      d.setDate(d.getDate() - 364);
+      return formatDateIso(d);
+    })();
+    if (minDate < capFrom) minDate = capFrom;
+
+    const days = enumerateDays(minDate, maxDate).length;
+    return { from: minDate, to: maxDate, days, source: "sessions" };
+  }
+
   async function resolvePetsForDateRange(client, from, to, allPets, animalType, onProgress = null) {
     const days = enumerateDays(from, to);
     const petMap = new Map();
@@ -1531,6 +1587,8 @@
   global.VetExcelGenerator = {
     compileDailySummary,
     countReportInventory,
+    createReportClient,
+    discoverSavedDataRange,
     enumerateDays,
   };
 

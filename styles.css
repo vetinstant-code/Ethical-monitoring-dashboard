@@ -1878,15 +1878,31 @@ body.reports-mode .page-back-btn {
   background: rgba(37, 99, 235, 0.06);
 }
 
-.reports-download-btn {
-  height: 42px;
-  border: none;
-  border-radius: 10px;
-  color: #fff;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
+.reports-download-btn:disabled,
+.reports-complete-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.15);
+}
+
+.reports-download-btn:disabled:hover,
+.reports-complete-btn:disabled:hover {
+  filter: grayscale(0.15);
+}
+
+.reports-download-btn--temp:disabled {
+  background: #fda4af;
+}
+
+.reports-download-btn--heart:disabled,
+.reports-download-btn--lung:disabled {
+  background: #86efac;
+  color: #14532d;
+}
+
+.reports-complete-btn:disabled {
+  background: #fcd34d;
+  color: #92400e;
 }
 
 .reports-dl-card--temp .reports-dl-icon {

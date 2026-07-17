@@ -9,7 +9,7 @@
     yesterday: "Yesterday",
     last7: "Last 7 Days",
     last30: "Last 30 Days",
-    all: "All Data",
+    all: "All saved data",
     custom: "Custom range",
   };
 
@@ -69,7 +69,12 @@
   }
 
   function rangeLabel() {
-    if (state.quickRange === "all") return "Last 365 days";
+    if (state.quickRange === "all") {
+      if (!state.from || !state.to) return "All saved data";
+      const days = dayCount(state.from, state.to);
+      if (state.from === state.to) return `All saved · ${formatDisplay(state.from)}`;
+      return `All saved · ${formatDisplay(state.from)} – ${formatDisplay(state.to)} (${days} days)`;
+    }
     if (!state.from || !state.to) return "—";
     if (state.from === state.to) return formatDisplay(state.from);
     return `${formatDisplay(state.from)} – ${formatDisplay(state.to)}`;
@@ -77,7 +82,9 @@
 
   function dateTriggerLabel() {
     const preset = CHIP_LABELS[state.quickRange] || CHIP_LABELS.custom;
+    if (state.quickRange === "all" && !state.from) return preset;
     if (state.quickRange === "custom") return `${preset} · ${rangeLabel()}`;
+    if (!state.from || !state.to) return preset;
     if (state.from === state.to) return `${preset} · ${formatDisplay(state.from)}`;
     return `${preset} · ${rangeLabel()}`;
   }
@@ -99,7 +106,7 @@
       state.from = addDaysIso(today, -29);
       state.to = today;
     } else if (key === "all") {
-      state.from = addDaysIso(today, -364);
+      state.from = null;
       state.to = today;
     }
     syncDateInputs();
@@ -112,6 +119,104 @@
     const testEl = document.getElementById("reports-test-type");
     state.animalType = animalEl?.value || "all";
     state.testType = testEl?.value || "all";
+  }
+
+  function setHiddenFilterValue(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  }
+
+  function setDropdownSelection(ddId, panelId, labelId, hiddenId, value, labelText) {
+    const panel = document.getElementById(panelId);
+    const label = document.getElementById(labelId);
+    if (label) label.textContent = labelText;
+    setHiddenFilterValue(hiddenId, value);
+    panel?.querySelectorAll(".reports-dd-option").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.value === value);
+    });
+  }
+
+  function updateDownloadButtons(counts, scanning) {
+    const tempBtn = document.querySelector('[data-download="temperature"]');
+    const heartBtn = document.querySelector('[data-download="heart"]');
+    const lungBtn = document.querySelector('[data-download="lung"]');
+    const completeBtn = document.getElementById("reports-download-complete");
+
+    const tempCount = counts?.temperature ?? null;
+    const heartCount = counts?.heart ?? null;
+    const lungCount = counts?.lung ?? null;
+    const canDownloadTemp = !scanning && tempCount != null && tempCount > 0;
+
+    if (tempBtn) {
+      tempBtn.disabled = !canDownloadTemp;
+      tempBtn.textContent = scanning ? "Scanning…" : canDownloadTemp ? "Download" : "No data yet";
+      tempBtn.title = canDownloadTemp ? "" : "Run a scan with temperature records in range";
+    }
+
+    if (heartBtn) {
+      heartBtn.disabled = true;
+      heartBtn.textContent = heartCount > 0 ? "Coming soon" : "Coming soon";
+      heartBtn.title = "Heart sound ZIP needs browser audio batch API (not wired yet)";
+    }
+
+    if (lungBtn) {
+      lungBtn.disabled = true;
+      lungBtn.textContent = "Coming soon";
+      lungBtn.title = "Lung sound ZIP needs browser audio batch API (not wired yet)";
+    }
+
+    if (completeBtn) {
+      completeBtn.disabled = !canDownloadTemp;
+      completeBtn.textContent = scanning
+        ? "Scanning…"
+        : canDownloadTemp
+          ? "Download Temperature Excel"
+          : "No data yet";
+      completeBtn.title = canDownloadTemp
+        ? "Exports temperature Excel for the selected range. Audio ZIP pending API."
+        : "Scan data first — export needs at least one temperature record";
+    }
+  }
+
+  async function resolveAllDataRange(scanToken) {
+    if (!global.VetExcelGenerator?.discoverSavedDataRange) {
+      const today = todayIso();
+      state.from = addDaysIso(today, -29);
+      state.to = today;
+      return;
+    }
+
+    progressUpdate("Finding saved data range…", 3);
+    progressLog("Scanning exam sessions to find first and last saved dates…");
+
+    const { client, cfg } = await global.VetExcelGenerator.createReportClient(currentDeviceId());
+
+    if (scanToken !== _scanToken) return;
+
+    const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
+    const span = await global.VetExcelGenerator.discoverSavedDataRange(
+      client,
+      cfg,
+      allPets,
+      state.animalType,
+      (pct, label) => {
+        if (scanToken !== _scanToken) return;
+        progressUpdate(label || "Finding saved dates…", 3 + Math.round(pct * 0.12));
+      }
+    );
+
+    if (scanToken !== _scanToken) return;
+
+    state.from = span.from;
+    state.to = span.to;
+    syncDateInputs();
+    updateRangeLabels();
+    progressLog(
+      span.source === "sessions"
+        ? `Saved data span: ${formatDisplay(span.from)} – ${formatDisplay(span.to)} (${span.days} day(s))`
+        : `No sessions found — using last ${span.days} day(s) as fallback`,
+      "done"
+    );
   }
 
   function syncDateInputs() {
@@ -143,7 +248,7 @@
     }
     const days = dayCount(from, to);
     if (state.quickRange === "custom" && days > MAX_CUSTOM_DAYS) {
-      return `Custom range is ${days} days (max ${MAX_CUSTOM_DAYS}). Pick "Last 30 Days" or "All Data" instead.`;
+      return `Custom range is ${days} days (max ${MAX_CUSTOM_DAYS}). Pick "Last 30 Days" or "All saved data" instead.`;
     }
     return null;
   }
@@ -383,6 +488,7 @@
     if (heartBadge) heartBadge.textContent = "… Files";
     if (lungBadge) lungBadge.textContent = "… Files";
     setCardsLoading(true);
+    updateDownloadButtons(null, true);
 
     progressShow("Scanning data…", 0);
     progressLog(`${dateTriggerLabel()} · ${dayCount(from, to)} day(s)`);
@@ -428,6 +534,7 @@
       progressDone(`Scan complete · ${counts.pets} animal(s) in range`);
       setStatusStrip("is-ready", `Ready · ${dateTriggerLabel()} · ${summaryFromCounts(counts)}`);
       _lastCounts = counts;
+      updateDownloadButtons(counts, false);
       return counts;
     } catch (err) {
       if (scanToken !== _scanToken) return null;
@@ -437,6 +544,8 @@
       progressLog(err.message || String(err), "error");
       progressDone("Scan failed", true);
       setStatusStrip("is-error", err.message || "Scan failed");
+      _lastCounts = null;
+      updateDownloadButtons(null, false);
       return null;
     }
   }
@@ -448,27 +557,37 @@
 
   async function applyAndScan() {
     readFiltersFromState();
-    const rangeError = validateDateRange();
-    if (rangeError) {
-      setStatus(rangeError, true);
-      setStatusStrip("is-error", rangeError);
-      progressShow("Invalid range", 0);
-      progressLog(rangeError, "error");
-      progressDone("Fix date range and try again", true);
-      return;
-    }
-
-    syncReportDateHidden();
-    updateRangeLabels();
 
     const scanToken = ++_scanToken;
     setScanningUi(true, 0, "Starting scan…");
+    updateDownloadButtons(null, true);
+
     try {
+      if (state.quickRange === "all" && !state.from) {
+        progressShow("Finding saved data…", 1);
+        await resolveAllDataRange(scanToken);
+        if (scanToken !== _scanToken) return;
+      }
+
+      const rangeError = validateDateRange();
+      if (rangeError) {
+        setStatus(rangeError, true);
+        setStatusStrip("is-error", rangeError);
+        progressShow("Invalid range", 0);
+        progressLog(rangeError, "error");
+        progressDone("Fix date range and try again", true);
+        updateDownloadButtons(null, false);
+        return;
+      }
+
+      syncReportDateHidden();
+      updateRangeLabels();
       await refreshCounts(scanToken);
     } catch (err) {
       if (scanToken === _scanToken) {
         setStatus(err.message || String(err), true);
         setStatusStrip("is-error", err.message || "Scan failed");
+        updateDownloadButtons(null, false);
       }
     }
   }
@@ -491,19 +610,48 @@
   }
 
   async function populateAnimalTypes() {
-    const select = document.getElementById("reports-animal-type");
-    if (!select) return;
+    const panel = document.getElementById("reports-animal-panel");
+    const hidden = document.getElementById("reports-animal-type");
+    const label = document.getElementById("reports-animal-label");
+    if (!panel || !hidden) return;
     try {
       const client = await ensureClient();
       const pets = global.VetLiveApi?.getPets?.() || global.VetApiNormalize.normalizePets(await client.listPets());
       const species = [...new Set(pets.map((p) => String(p.species || p.pet_species || "").trim()).filter(Boolean))].sort();
-      const current = select.value || "all";
-      select.innerHTML = `<option value="all">All Animals</option>` + species.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
-      select.value = [...select.options].some((o) => o.value === current) ? current : "all";
-      state.animalType = select.value;
+      const current = hidden.value || "all";
+      const options = [{ value: "all", label: "All Animals" }, ...species.map((s) => ({ value: s, label: s }))];
+      panel.innerHTML = options
+        .map(
+          (o) =>
+            `<button type="button" class="reports-dd-option${o.value === current ? " is-active" : ""}" data-value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</button>`
+        )
+        .join("");
+      panel.querySelectorAll(".reports-dd-option").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectAnimalFilter(btn.dataset.value || "all", btn.textContent || "All Animals");
+        });
+      });
+      const active = options.find((o) => o.value === current) || options[0];
+      hidden.value = active.value;
+      state.animalType = active.value;
+      if (label) label.textContent = active.label;
     } catch {
       /* keep default */
     }
+  }
+
+  function selectAnimalFilter(value, labelText) {
+    setDropdownSelection("reports-dd-animal", "reports-animal-panel", "reports-animal-label", "reports-animal-type", value, labelText);
+    state.animalType = value;
+    closeReportsDropdown("reports-dd-animal");
+    applyAndScan();
+  }
+
+  function selectTestFilter(value, labelText) {
+    setDropdownSelection("reports-dd-test", "reports-test-panel", "reports-test-label", "reports-test-type", value, labelText);
+    state.testType = value;
+    closeReportsDropdown("reports-dd-test");
+    applyAndScan();
   }
 
   function readFiltersFromUi() {
@@ -651,30 +799,47 @@
     setStatus(`Export complete · ${totalRows} temperature row(s). Audio ZIP requires device API.`);
   }
 
-  function openDateDropdown() {
-    const dd = document.getElementById("reports-dd-date");
-    const panel = document.getElementById("reports-date-panel");
-    const trigger = document.getElementById("reports-date-trigger");
+  function openReportsDropdown(ddId, panelId, triggerId) {
+    closeAllReportsDropdowns();
+    const dd = document.getElementById(ddId);
+    const panel = document.getElementById(panelId);
+    const trigger = document.getElementById(triggerId);
     if (!dd || !panel || !trigger) return;
     dd.classList.add("is-open");
     panel.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
   }
 
-  function closeDateDropdown() {
-    const dd = document.getElementById("reports-dd-date");
-    const panel = document.getElementById("reports-date-panel");
-    const trigger = document.getElementById("reports-date-trigger");
-    if (!dd || !panel || !trigger) return;
+  function closeReportsDropdown(ddId) {
+    const dd = document.getElementById(ddId);
+    if (!dd) return;
+    const panel = dd.querySelector(".reports-dd-panel");
+    const trigger = dd.querySelector(".reports-dd-trigger");
     dd.classList.remove("is-open");
-    panel.hidden = true;
-    trigger.setAttribute("aria-expanded", "false");
+    if (panel) panel.hidden = true;
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+  }
+
+  function closeAllReportsDropdowns() {
+    ["reports-dd-date", "reports-dd-animal", "reports-dd-test"].forEach(closeReportsDropdown);
+  }
+
+  function toggleReportsDropdown(ddId, panelId, triggerId) {
+    const dd = document.getElementById(ddId);
+    if (dd?.classList.contains("is-open")) closeReportsDropdown(ddId);
+    else openReportsDropdown(ddId, panelId, triggerId);
+  }
+
+  function openDateDropdown() {
+    openReportsDropdown("reports-dd-date", "reports-date-panel", "reports-date-trigger");
+  }
+
+  function closeDateDropdown() {
+    closeReportsDropdown("reports-dd-date");
   }
 
   function toggleDateDropdown() {
-    const dd = document.getElementById("reports-dd-date");
-    if (dd?.classList.contains("is-open")) closeDateDropdown();
-    else openDateDropdown();
+    toggleReportsDropdown("reports-dd-date", "reports-date-panel", "reports-date-trigger");
   }
 
   function bindUi() {
@@ -711,43 +876,52 @@
       updateDateDropdownUi();
     });
 
-    document.getElementById("reports-animal-type")?.addEventListener("change", () => {
-      applyAndScan();
+    document.getElementById("reports-animal-trigger")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleReportsDropdown("reports-dd-animal", "reports-animal-panel", "reports-animal-trigger");
     });
 
-    document.getElementById("reports-test-type")?.addEventListener("change", () => {
-      applyAndScan();
+    document.getElementById("reports-test-trigger")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleReportsDropdown("reports-dd-test", "reports-test-panel", "reports-test-trigger");
+    });
+
+    document.querySelectorAll("#reports-test-panel .reports-dd-option").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectTestFilter(btn.dataset.value || "all", btn.textContent || "All Tests");
+      });
     });
 
     document.getElementById("reports-reset-filters")?.addEventListener("click", () => {
-      const animal = document.getElementById("reports-animal-type");
-      const test = document.getElementById("reports-test-type");
-      if (animal) animal.value = "all";
-      if (test) test.value = "all";
+      setDropdownSelection("reports-dd-animal", "reports-animal-panel", "reports-animal-label", "reports-animal-type", "all", "All Animals");
+      setDropdownSelection("reports-dd-test", "reports-test-panel", "reports-test-label", "reports-test-type", "all", "All Tests");
       state.animalType = "all";
       state.testType = "all";
       applyQuickRange("today");
       syncReportDateHidden();
+      _lastCounts = null;
       const tempBadge = document.getElementById("reports-temp-count");
       const heartBadge = document.getElementById("reports-heart-count");
       const lungBadge = document.getElementById("reports-lung-count");
       if (tempBadge) tempBadge.textContent = "— Records";
       if (heartBadge) heartBadge.textContent = "— Files";
       if (lungBadge) lungBadge.textContent = "— Files";
+      updateDownloadButtons(null, false);
       applyAndScan();
     });
 
     document.addEventListener("click", (e) => {
-      if (!e.target.closest("#reports-dd-date")) closeDateDropdown();
+      if (!e.target.closest(".reports-dd")) closeAllReportsDropdowns();
     });
 
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeDateDropdown();
+      if (e.key === "Escape") closeAllReportsDropdowns();
     });
 
     document.querySelectorAll("[data-download]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const kind = btn.getAttribute("data-download");
+        if (btn.disabled) return;
         btn.disabled = true;
         const origText = btn.textContent;
         btn.textContent = "Working…";
@@ -761,15 +935,19 @@
           progressDone("Download failed", true);
           setStatus(err.message || String(err), true);
         } finally {
-          btn.disabled = false;
-          btn.textContent = origText;
+          updateDownloadButtons(_lastCounts, false);
+          if (kind === "temperature" && btn.textContent === "Working…") {
+            btn.textContent = origText;
+          }
         }
       });
     });
 
     document.getElementById("reports-download-complete")?.addEventListener("click", async () => {
       const btn = document.getElementById("reports-download-complete");
-      if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = "Working…";
       setStatus("");
       try {
         readFiltersFromState();
@@ -779,7 +957,7 @@
         progressDone("Export failed", true);
         setStatus(err.message || String(err), true);
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "Download Complete ZIP"; }
+        updateDownloadButtons(_lastCounts, false);
       }
     });
   }
@@ -800,6 +978,7 @@
     syncReportDateHidden();
     bindUi();
     renderHistory();
+    updateDownloadButtons(null, false);
     setStatusStrip("", "Open date range to load data");
   }
 
