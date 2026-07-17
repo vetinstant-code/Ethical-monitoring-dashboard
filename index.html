@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=47" />
+  <link rel="stylesheet" href="styles.css?v=48" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -356,7 +356,9 @@
                     <th>Animal Name</th>
                     <th>ID</th>
                     <th>Species</th>
-                    <th>ExamD (°C)</th>
+                    <th>T1</th>
+                    <th>T2</th>
+                    <th>T3</th>
                     <th>Reference (°C)</th>
                     <th>Mean</th>
                     <th>Max</th>
@@ -367,7 +369,7 @@
                     <th>Acceptance Criteria (±0.2 °C)</th>
                   </tr>
                 </thead>
-                <tbody id="cv-compare-body"><tr><td colspan="13" class="empty-state">Loading…</td></tr></tbody>
+                <tbody id="cv-compare-body"><tr><td colspan="15" class="empty-state">Loading…</td></tr></tbody>
               </table>
             </div>
           </article>
@@ -686,15 +688,15 @@
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=9"></script>
   <script src="excel-generator.js?v=19"></script>
-  <script src="dashboard-home.js?v=6"></script>
-  <script src="live-api.js?v=32"></script>
+  <script src="dashboard-home.js?v=7"></script>
+  <script src="live-api.js?v=33"></script>
   <script src="app-pages.js?v=10"></script>
   <script src="reports-page.js?v=18"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=28").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=29").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

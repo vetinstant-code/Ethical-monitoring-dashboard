@@ -187,7 +187,7 @@
     if (!body) return;
     const valid = rows.filter((r) => r.examD != null && r.reference != null && r.errMax != null);
     if (!valid.length) {
-      body.innerHTML = `<tr><td colspan="13" class="empty-state">No reference comparison data for this date.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="15" class="empty-state">No reference comparison data for this date.</td></tr>`;
       return;
     }
 
@@ -203,9 +203,11 @@
           <td><span class="animal-name-bold">${escapeHtml(r.name || "—")}</span></td>
           <td>${escapeHtml(r.displayId || "—")}</td>
           <td>${escapeHtml(r.species)}</td>
-          <td class="vitals-text-bold">${fmtTemp(r.examD)}</td>
+          <td>${fmtTemp(m.t1)}</td>
+          <td>${fmtTemp(m.t2)}</td>
+          <td>${fmtTemp(m.t3)}</td>
           <td>${fmtTemp(r.reference)}</td>
-          <td>${fmtTemp(m.mean)}</td>
+          <td class="vitals-text-bold">${fmtTemp(m.mean ?? r.examD)}</td>
           <td>${fmtTemp(m.max)}</td>
           <td>${fmtTemp(m.sd)}</td>
           <td>${fmtTemp(m.range)}</td>
