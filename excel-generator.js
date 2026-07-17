@@ -40,8 +40,20 @@
   }
 
   function _positiveFloat(value) {
-    const n = parseFloat(value);
+    const n = Number(String(value ?? "").replace(/f$/i, "").trim());
     return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  function normalizeTemperatureReadings(payload) {
+    if (Array.isArray(payload)) return payload.filter((x) => x && typeof x === "object");
+    if (payload && typeof payload === "object") {
+      for (const key of ["readings", "temperature_readings", "data", "results"]) {
+        if (Array.isArray(payload[key])) {
+          return payload[key].filter((x) => x && typeof x === "object");
+        }
+      }
+    }
+    return [];
   }
 
   /** Map summary IR fields into [ambient, forehead, body] for t1/t2/t3. */
@@ -52,15 +64,124 @@
       t3: [0.0, 0.0, 0.0],
     };
     if (!irSummary || typeof irSummary !== "object") return blocks;
-    ["t1", "t2", "t3"].forEach((key) => {
-      const ambient = _positiveFloat(irSummary[`${key}_ambient`] ?? irSummary[`${key}_amb`]);
-      const forehead = _positiveFloat(irSummary[`${key}_forehead`] ?? irSummary[`${key}_tf`]);
-      const body = _positiveFloat(irSummary[key]);
+
+    const nestedAmb = irSummary.ambient && typeof irSummary.ambient === "object" ? irSummary.ambient : null;
+    const nestedFore = irSummary.forehead && typeof irSummary.forehead === "object" ? irSummary.forehead : null;
+
+    ["t1", "t2", "t3"].forEach((key, idx) => {
+      const n = idx + 1;
+      const ambient = _positiveFloat(
+        irSummary[`${key}_ambient`] ??
+          irSummary[`${key}_amb`] ??
+          irSummary[`ambient_${key}`] ??
+          irSummary[`ambient_t${n}`] ??
+          irSummary[`t_ambient_${n}`] ??
+          nestedAmb?.[key] ??
+          nestedAmb?.[`t${n}`] ??
+          nestedAmb?.[n]
+      );
+      const forehead = _positiveFloat(
+        irSummary[`${key}_forehead`] ??
+          irSummary[`${key}_tf`] ??
+          irSummary[`forehead_${key}`] ??
+          irSummary[`forehead_t${n}`] ??
+          irSummary[`tf_${n}`] ??
+          nestedFore?.[key] ??
+          nestedFore?.[`t${n}`] ??
+          nestedFore?.[n]
+      );
+      const body = _positiveFloat(
+        irSummary[key] ?? irSummary[`${key}_body`] ?? irSummary[`${key}_tbody`] ?? irSummary[`body_${key}`]
+      );
       if (ambient != null) blocks[key][0] = ambient;
       if (forehead != null) blocks[key][1] = forehead;
       if (body != null) blocks[key][2] = body;
     });
     return blocks;
+  }
+
+  function tBlocksFromRawReadings(readings) {
+    const blocks = {
+      t1: [0.0, 0.0, 0.0],
+      t2: [0.0, 0.0, 0.0],
+      t3: [0.0, 0.0, 0.0],
+    };
+    const slotMap = { 1: "t1", 2: "t2", 3: "t3" };
+    const colMap = { ambient: 0, t_ambient: 0, forehead: 1, tf: 1, body: 2, tbody: 2 };
+
+    (readings || []).forEach((item) => {
+      const sensor = String(item.sensor_type || item.type || item.sensor || "").trim().toLowerCase();
+      if (["reference_thermometer", "reference", "tmp", "rectal_sensor", "rectal"].includes(sensor)) return;
+      const readingNo = Number(item.reading_number || 0);
+      const slot = slotMap[readingNo];
+      if (!slot) return;
+
+      const ambient = _positiveFloat(item.ambient ?? item.t_ambient);
+      const forehead = _positiveFloat(item.forehead ?? item.tf);
+      const body = _positiveFloat(item.body ?? item.tbody ?? item.temperature_value);
+      if (ambient != null) blocks[slot][0] = ambient;
+      if (forehead != null) blocks[slot][1] = forehead;
+      if (body != null) blocks[slot][2] = body;
+
+      const zone = String(item.zone || item.measurement_zone || item.location || "").trim().toLowerCase();
+      const val = _positiveFloat(item.temperature_value);
+      if (zone && val != null && colMap[zone] != null) {
+        blocks[slot][colMap[zone]] = val;
+      }
+    });
+    return blocks;
+  }
+
+  function mergeTBlocks(primary, fallback) {
+    const out = {
+      t1: [...(primary?.t1 || [0, 0, 0])],
+      t2: [...(primary?.t2 || [0, 0, 0])],
+      t3: [...(primary?.t3 || [0, 0, 0])],
+    };
+    ["t1", "t2", "t3"].forEach((key) => {
+      for (let i = 0; i < 3; i += 1) {
+        if (!(out[key][i] > 0) && fallback?.[key]?.[i] > 0) out[key][i] = fallback[key][i];
+      }
+    });
+    return out;
+  }
+
+  function tBlocksNeedEnrichment(blocks) {
+    return ["t1", "t2", "t3"].some((key) => !(blocks?.[key]?.[0] > 0) || !(blocks?.[key]?.[1] > 0));
+  }
+
+  function refsFromSummary(summary) {
+    const refs = [0.0, 0.0, 0.0];
+    if (!summary || typeof summary !== "object") return refs;
+    [1, 2, 3].forEach((i) => {
+      const v = _positiveFloat(
+        summary[`ref${i}`] ??
+          summary[`ref_${i}`] ??
+          summary[`reference${i}`] ??
+          summary[`reference_${i}`] ??
+          summary[`temp${i}`] ??
+          summary[`ref_temp${i}`]
+      );
+      if (v != null) refs[i - 1] = v;
+    });
+    return refs;
+  }
+
+  function refsFromRawReadings(readings) {
+    const refs = [0.0, 0.0, 0.0];
+    (readings || []).forEach((item) => {
+      const sensor = String(item.sensor_type || item.type || item.sensor || "").trim().toLowerCase();
+      if (!["reference_thermometer", "reference"].includes(sensor) && !sensor.includes("reference")) return;
+      const readingNo = Number(item.reading_number || 0);
+      if (![1, 2, 3].includes(readingNo)) return;
+      const v = _positiveFloat(item.temperature_value ?? item.temp ?? item.value);
+      if (v != null) refs[readingNo - 1] = v;
+    });
+    return refs;
+  }
+
+  function mergeRefs(primary, fallback) {
+    return [0, 1, 2].map((i) => (primary[i] > 0 ? primary[i] : fallback[i] > 0 ? fallback[i] : 0));
   }
 
   function _finiteNums(values) {
@@ -1685,22 +1806,44 @@
           const irSummary = kind === "ir" ? payload : pickLatestSummary(realExamSessionId, isIrSummary);
           const rectSummary = pickLatestSummary(realExamSessionId, isRectalSummary);
 
-          const refsC = [0.0, 0.0, 0.0];
-          const bestForRefs = irSummary || rectSummary;
-          if (bestForRefs) {
-            [1, 2, 3].forEach((i) => {
-              const v = parseFloat(bestForRefs[`ref${i}`]);
-              if (!isNaN(v) && v > 0) refsC[i - 1] = v;
-            });
-          }
+          const refsC = refsFromSummary(irSummary || rectSummary);
           const rectalC = [0.0, 0.0, 0.0];
           if (rectSummary) {
             [1, 2, 3].forEach((i) => {
-              const v = parseFloat(rectSummary[`t${i}`]);
-              if (!isNaN(v) && v > 0) rectalC[i - 1] = v;
+              const v = _positiveFloat(rectSummary[`t${i}`]);
+              if (v != null) rectalC[i - 1] = v;
             });
           }
-          const refsF = refsC.map((c) => (c > 0 ? parseFloat(((c * 9) / 5 + 32).toFixed(2)) : 0));
+
+          let chosenTBlocks = irSummary
+            ? tBlocksFromSummary(irSummary)
+            : { t1: [0.0, 0.0, 0.0], t2: [0.0, 0.0, 0.0], t3: [0.0, 0.0, 0.0] };
+
+          let refsResolved = refsC;
+          const needRawEnrichment =
+            realExamSessionId &&
+            (tBlocksNeedEnrichment(chosenTBlocks) || !refsResolved.some((v) => v > 0));
+
+          if (needRawEnrichment) {
+            try {
+              const rawPayload = await client.petTemperatureBySessionWithContext(
+                petId,
+                realExamSessionId,
+                cfg
+              );
+              const rawRows = normalizeTemperatureReadings(rawPayload);
+              if (rawRows.length) {
+                chosenTBlocks = mergeTBlocks(chosenTBlocks, tBlocksFromRawReadings(rawRows));
+                refsResolved = mergeRefs(refsResolved, refsFromRawReadings(rawRows));
+              }
+            } catch (e) {
+              logger.warn?.(
+                `  Raw temperature enrich failed for session ${realExamSessionId}: ${e.message || e}`
+              );
+            }
+          }
+
+          const refsF = refsResolved.map((c) => (c > 0 ? parseFloat(((c * 9) / 5 + 32).toFixed(2)) : 0));
 
           let sortDt = new Date(0);
           if (irSummary) sortDt = rowDatetimeForSort(irSummary);
@@ -1710,15 +1853,6 @@
           const fallbackTs = sessionForPair ? String(sessionForPair.started_at || sessionForPair.created_at || "") : "";
           const fallbackCreated = { recorded_at: fallbackTs };
           const [createdDate, createdTime] = extractDatetimeParts(irSummary || rectSummary || fallbackCreated);
-
-          let chosenTBlocks = {
-            t1: [0.0, 0.0, 0.0],
-            t2: [0.0, 0.0, 0.0],
-            t3: [0.0, 0.0, 0.0],
-          };
-          if (irSummary) {
-            chosenTBlocks = tBlocksFromSummary(irSummary);
-          }
 
           // Fetch notes
           let noteFields = { ir_ear: "", rectal_sensor: "", reference_thermometer: "" };
@@ -1740,7 +1874,7 @@
           // Validity filter
           const hasIrData = Object.values(chosenTBlocks).some(block => block.some(val => val > 0));
           const hasRectalData = rectalC.some(val => val > 0);
-          const hasRefData = refsC.some(val => val > 0);
+          const hasRefData = refsResolved.some(val => val > 0);
 
           if (!hasIrData && !hasRectalData && !hasRefData && !hasAnyNote) {
             logger.log(`  Skipping blank session row [${sessionCounter}] (no vitals or clinical notes).`);
@@ -1760,7 +1894,7 @@
             created_date: createdDate,
             created_time: createdTime,
             chosen_t_blocks: chosenTBlocks,
-            refs_c: refsC,
+            refs_c: refsResolved,
             rectal_c: rectalC,
             refs_f: refsF,
             note_fields: noteFields,
@@ -1856,7 +1990,7 @@
     ws.getCell(2, 12).value = "Body(Tbody)";
     ws.mergeCells(1, 10, 1, 12);
 
-    ws.getCell(1, 13).value = "Ambient"; // Typo preserved for template match
+    ws.getCell(1, 13).value = "t3";
     ws.getCell(2, 13).value = "Ambient";
     ws.getCell(2, 14).value = "Forehead";
     ws.getCell(2, 15).value = "Body(Tbody)";
