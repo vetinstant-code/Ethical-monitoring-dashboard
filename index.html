@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=41" />
+  <link rel="stylesheet" href="styles.css?v=42" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -449,34 +449,35 @@
             </div>
 
             <div class="reports-filters">
-              <div class="reports-quick-select" role="group" aria-label="Quick date select">
-                <button type="button" class="reports-chip is-active" data-range="today">Today</button>
-                <button type="button" class="reports-chip" data-range="yesterday">Yesterday</button>
-                <button type="button" class="reports-chip" data-range="last7">Last 7 Days</button>
-                <button type="button" class="reports-chip" data-range="last30">Last 30 Days</button>
-                <button type="button" class="reports-chip" data-range="all">All Data</button>
-              </div>
-
-              <div class="reports-date-range">
-                <label class="reports-date-field">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <div class="reports-dd" id="reports-dd-date">
+                <button type="button" class="reports-filter-pill reports-dd-trigger" id="reports-date-trigger" aria-haspopup="listbox" aria-expanded="false">
+                  <svg class="reports-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <rect x="3" y="4" width="18" height="18" rx="2"></rect>
                     <line x1="16" y1="2" x2="16" y2="6"></line>
                     <line x1="8" y1="2" x2="8" y2="6"></line>
                     <line x1="3" y1="10" x2="21" y2="10"></line>
                   </svg>
-                  <input type="date" id="reports-date-from" />
-                </label>
-                <span class="reports-date-to-label">To</span>
-                <label class="reports-date-field">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
-                    <line x1="16" y1="2" x2="16" y2="6"></line>
-                    <line x1="8" y1="2" x2="8" y2="6"></line>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  <span class="reports-dd-label" id="reports-date-label">Today</span>
+                  <svg class="reports-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9"></polyline>
                   </svg>
-                  <input type="date" id="reports-date-to" />
-                </label>
+                </button>
+                <div class="reports-dd-panel" id="reports-date-panel" role="listbox" hidden>
+                  <button type="button" class="reports-dd-option is-active" data-range="today">Today</button>
+                  <button type="button" class="reports-dd-option" data-range="yesterday">Yesterday</button>
+                  <button type="button" class="reports-dd-option" data-range="last7">Last 7 Days</button>
+                  <button type="button" class="reports-dd-option" data-range="last30">Last 30 Days</button>
+                  <button type="button" class="reports-dd-option" data-range="all">All Data (365 days)</button>
+                  <div class="reports-dd-custom">
+                    <p class="reports-dd-custom-title">Custom range</p>
+                    <div class="reports-dd-custom-dates">
+                      <input type="date" id="reports-date-from" aria-label="From date" />
+                      <span class="reports-date-to-label">to</span>
+                      <input type="date" id="reports-date-to" aria-label="To date" />
+                    </div>
+                    <button type="button" class="reports-dd-custom-apply" id="reports-custom-range-apply">Use this range</button>
+                  </div>
+                </div>
               </div>
 
               <select id="reports-animal-type" class="reports-select" aria-label="Animal type">
@@ -490,12 +491,6 @@
                 <option value="lung">Lung Sound</option>
               </select>
 
-              <button type="button" class="reports-btn reports-btn-primary" id="reports-apply-filters">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                </svg>
-                <span>Apply Filters</span>
-              </button>
               <button type="button" class="reports-btn reports-btn-ghost" id="reports-reset-filters">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <polyline points="23 4 23 10 17 10"></polyline>
@@ -504,7 +499,10 @@
                 <span>Reset</span>
               </button>
             </div>
-            <p class="reports-filter-mode" id="reports-filter-mode">Active filter: Today</p>
+            <div class="reports-status-strip" id="reports-status-strip">
+              <span class="reports-status-dot" id="reports-status-dot" aria-hidden="true"></span>
+              <span class="reports-status-text" id="reports-status-text">Select a date range to load data</span>
+            </div>
           </div>
 
           <!-- Progress block (visible while scanning / downloading) -->
@@ -663,12 +661,12 @@
   <script src="dashboard-home.js?v=3"></script>
   <script src="live-api.js?v=28"></script>
   <script src="app-pages.js?v=8"></script>
-  <script src="reports-page.js?v=10"></script>
+  <script src="reports-page.js?v=11"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=13").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=14").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

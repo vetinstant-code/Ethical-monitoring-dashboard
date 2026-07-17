@@ -1,5 +1,5 @@
 /**
- * Reports page — filters, download cards, history UI.
+ * Reports page — unified filters (auto-apply), download cards, history UI.
  */
 (function (global) {
   const HISTORY_KEY = "vet_reports_download_history";
@@ -9,8 +9,8 @@
     yesterday: "Yesterday",
     last7: "Last 7 Days",
     last30: "Last 30 Days",
-    all: "All Data (365 days)",
-    custom: "Custom date range",
+    all: "All Data",
+    custom: "Custom range",
   };
 
   const state = {
@@ -20,6 +20,11 @@
     animalType: "all",
     testType: "all",
   };
+
+  let _syncingDates = false;
+  let _scanToken = 0;
+  let _progressActive = false;
+  let _lastCounts = null;
 
   const istFmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Kolkata",
@@ -64,10 +69,17 @@
   }
 
   function rangeLabel() {
-    if (state.quickRange === "all") return "All Data (last 365 days)";
+    if (state.quickRange === "all") return "Last 365 days";
     if (!state.from || !state.to) return "—";
     if (state.from === state.to) return formatDisplay(state.from);
     return `${formatDisplay(state.from)} – ${formatDisplay(state.to)}`;
+  }
+
+  function dateTriggerLabel() {
+    const preset = CHIP_LABELS[state.quickRange] || CHIP_LABELS.custom;
+    if (state.quickRange === "custom") return `${preset} · ${rangeLabel()}`;
+    if (state.from === state.to) return `${preset} · ${formatDisplay(state.from)}`;
+    return `${preset} · ${rangeLabel()}`;
   }
 
   function applyQuickRange(key) {
@@ -92,31 +104,15 @@
     }
     syncDateInputs();
     updateRangeLabels();
+    updateDateDropdownUi();
   }
 
-  /** Single source of truth when Apply Filters / Download is clicked. */
-  function readFiltersFromUi() {
-    const activeChip = document.querySelector(".reports-chip.is-active");
+  function readFiltersFromState() {
     const animalEl = document.getElementById("reports-animal-type");
     const testEl = document.getElementById("reports-test-type");
-
-    if (activeChip?.dataset?.range) {
-      applyQuickRange(activeChip.dataset.range);
-    } else {
-      const fromEl = document.getElementById("reports-date-from");
-      const toEl = document.getElementById("reports-date-to");
-      state.from = fromEl?.value || state.from || todayIso();
-      state.to = toEl?.value || state.to || todayIso();
-      state.quickRange = "custom";
-      syncDateInputs();
-      updateRangeLabels();
-    }
-
     state.animalType = animalEl?.value || "all";
     state.testType = testEl?.value || "all";
   }
-
-  let _syncingDates = false;
 
   function syncDateInputs() {
     _syncingDates = true;
@@ -127,12 +123,16 @@
     _syncingDates = false;
   }
 
-  function updateFilterModeBanner() {
-    const el = document.getElementById("reports-filter-mode");
-    if (!el) return;
-    const mode = CHIP_LABELS[state.quickRange] || CHIP_LABELS.custom;
-    const days = dayCount(state.from, state.to);
-    el.textContent = `Active filter: ${mode} · ${rangeLabel()} · ${days} day(s) — click Apply Filters to scan`;
+  function updateDateDropdownUi() {
+    const label = document.getElementById("reports-date-label");
+    if (label) label.textContent = dateTriggerLabel();
+
+    document.querySelectorAll(".reports-dd-option[data-range]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.range === state.quickRange);
+    });
+
+    const customBlock = document.querySelector(".reports-dd-custom");
+    if (customBlock) customBlock.classList.toggle("is-active", state.quickRange === "custom");
   }
 
   function validateDateRange() {
@@ -143,7 +143,7 @@
     }
     const days = dayCount(from, to);
     if (state.quickRange === "custom" && days > MAX_CUSTOM_DAYS) {
-      return `Custom range is ${days} days (max ${MAX_CUSTOM_DAYS}). Use "Last 30 Days" or "All Data" instead.`;
+      return `Custom range is ${days} days (max ${MAX_CUSTOM_DAYS}). Pick "Last 30 Days" or "All Data" instead.`;
     }
     return null;
   }
@@ -153,7 +153,31 @@
     document.querySelectorAll("[data-card-range]").forEach((el) => {
       el.textContent = label;
     });
-    updateFilterModeBanner();
+    updateDateDropdownUi();
+  }
+
+  function setStatusStrip(mode, text) {
+    const strip = document.getElementById("reports-status-strip");
+    const textEl = document.getElementById("reports-status-text");
+    if (!strip || !textEl) return;
+    strip.classList.remove("is-scanning", "is-ready", "is-error");
+    if (mode) strip.classList.add(mode);
+    textEl.textContent = text;
+  }
+
+  function setScanningUi(active, pct, label) {
+    const trigger = document.getElementById("reports-date-trigger");
+    const grid = document.querySelector(".reports-cards-grid");
+    if (trigger) trigger.classList.toggle("is-scanning", active);
+    if (grid) grid.classList.toggle("is-loading", active);
+    if (active) {
+      const pctText = pct != null ? `${Math.round(pct)}% · ` : "";
+      setStatusStrip("is-scanning", `${pctText}${label || "Scanning data…"}`);
+    }
+  }
+
+  function setCardsLoading(active) {
+    document.querySelector(".reports-cards-grid")?.classList.toggle("is-loading", active);
   }
 
   function ensureProgressBlock() {
@@ -177,21 +201,6 @@
     return block;
   }
 
-  function setApplyButtonProgress(pct, label) {
-    const btn = document.getElementById("reports-apply-filters");
-    if (!btn) return;
-    if (pct == null) {
-      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg><span>Apply Filters</span>`;
-      return;
-    }
-    const span = btn.querySelector("span");
-    if (span) span.textContent = `${Math.round(pct)}% · ${label || "Scanning"}`;
-  }
-
-  /* ---- progress bar helpers ---- */
-
-  let _progressActive = false;
-
   function progressShow(label, pct) {
     const block = ensureProgressBlock();
     const labelEl = document.getElementById("reports-progress-label");
@@ -203,13 +212,15 @@
     block.hidden = false;
     block.removeAttribute("hidden");
     block.classList.add("is-visible");
-    block.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (labelEl) labelEl.textContent = label || "Working…";
     const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
     if (pctEl) pctEl.textContent = `${clamped}%`;
-    if (fill) fill.style.width = `${clamped}%`;
+    if (fill) {
+      fill.style.width = `${clamped}%`;
+      fill.style.background = "";
+    }
     if (log && pct === 0) log.innerHTML = "";
-    setApplyButtonProgress(clamped, label);
+    setScanningUi(true, clamped, label);
   }
 
   function progressUpdate(label, pct) {
@@ -223,7 +234,7 @@
     const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
     if (pctEl) pctEl.textContent = `${clamped}%`;
     if (fill) fill.style.width = `${clamped}%`;
-    setApplyButtonProgress(clamped, label);
+    setScanningUi(true, clamped, label);
   }
 
   function progressLog(msg, kind) {
@@ -243,7 +254,8 @@
       if (fill) fill.style.background = "#dc2626";
     }
     _progressActive = false;
-    setApplyButtonProgress(null);
+    document.getElementById("reports-date-trigger")?.classList.remove("is-scanning");
+    setCardsLoading(false);
   }
 
   function setStatus(msg, isError) {
@@ -349,7 +361,11 @@
     return `${count} File${count === 1 ? "" : "s"}`;
   }
 
-  async function refreshCounts() {
+  function summaryFromCounts(counts) {
+    return `${counts.temperature} temperature · ${counts.heart} heart · ${counts.lung} lung · ${counts.pets} animal(s)`;
+  }
+
+  async function refreshCounts(scanToken) {
     const tempBadge = document.getElementById("reports-temp-count");
     const heartBadge = document.getElementById("reports-heart-count");
     const lungBadge = document.getElementById("reports-lung-count");
@@ -360,15 +376,16 @@
       if (tempBadge) tempBadge.textContent = "— Records";
       if (heartBadge) heartBadge.textContent = "— Files";
       if (lungBadge) lungBadge.textContent = "— Files";
-      return;
+      return null;
     }
 
     if (tempBadge) tempBadge.textContent = "… Records";
     if (heartBadge) heartBadge.textContent = "… Files";
     if (lungBadge) lungBadge.textContent = "… Files";
+    setCardsLoading(true);
 
     progressShow("Scanning data…", 0);
-    progressLog(`Date range: ${formatDisplay(from)}${from !== to ? " – " + formatDisplay(to) : ""}`);
+    progressLog(`${dateTriggerLabel()} · ${dayCount(from, to)} day(s)`);
 
     try {
       if (!global.VetExcelGenerator?.countReportInventory) {
@@ -391,8 +408,11 @@
         testType: state.testType,
         deviceId: currentDeviceId(),
       }, logger, (pct, label) => {
+        if (scanToken !== _scanToken) return;
         progressUpdate(label || "Scanning…", 10 + Math.round(pct * 0.85));
       });
+
+      if (scanToken !== _scanToken) return null;
 
       progressUpdate("Done scanning", 100);
 
@@ -404,17 +424,20 @@
       if (heartBadge) heartBadge.textContent = showHeart ? formatCountBadge("heart", counts.heart) : "— Files";
       if (lungBadge) lungBadge.textContent = showLung ? formatCountBadge("lung", counts.lung) : "— Files";
 
-      progressLog(
-        `Found: ${counts.temperature} temperature · ${counts.heart} heart · ${counts.lung} lung`,
-        "done"
-      );
+      progressLog(`Found: ${summaryFromCounts(counts)}`, "done");
       progressDone(`Scan complete · ${counts.pets} animal(s) in range`);
+      setStatusStrip("is-ready", `Ready · ${dateTriggerLabel()} · ${summaryFromCounts(counts)}`);
+      _lastCounts = counts;
+      return counts;
     } catch (err) {
+      if (scanToken !== _scanToken) return null;
       if (tempBadge) tempBadge.textContent = "— Records";
       if (heartBadge) heartBadge.textContent = "— Files";
       if (lungBadge) lungBadge.textContent = "— Files";
       progressLog(err.message || String(err), "error");
       progressDone("Scan failed", true);
+      setStatusStrip("is-error", err.message || "Scan failed");
+      return null;
     }
   }
 
@@ -423,8 +446,48 @@
     if (el) el.value = state.to || todayIso();
   }
 
-  function applyFiltersToReports() {
+  async function applyAndScan() {
+    readFiltersFromState();
+    const rangeError = validateDateRange();
+    if (rangeError) {
+      setStatus(rangeError, true);
+      setStatusStrip("is-error", rangeError);
+      progressShow("Invalid range", 0);
+      progressLog(rangeError, "error");
+      progressDone("Fix date range and try again", true);
+      return;
+    }
+
     syncReportDateHidden();
+    updateRangeLabels();
+
+    const scanToken = ++_scanToken;
+    setScanningUi(true, 0, "Starting scan…");
+    try {
+      await refreshCounts(scanToken);
+    } catch (err) {
+      if (scanToken === _scanToken) {
+        setStatus(err.message || String(err), true);
+        setStatusStrip("is-error", err.message || "Scan failed");
+      }
+    }
+  }
+
+  function applyCustomRangeFromInputs() {
+    const fromEl = document.getElementById("reports-date-from");
+    const toEl = document.getElementById("reports-date-to");
+    state.from = fromEl?.value || state.from || todayIso();
+    state.to = toEl?.value || state.to || todayIso();
+    state.quickRange = "custom";
+    updateRangeLabels();
+    closeDateDropdown();
+    applyAndScan();
+  }
+
+  function selectPresetRange(key) {
+    applyQuickRange(key);
+    closeDateDropdown();
+    applyAndScan();
   }
 
   async function populateAnimalTypes() {
@@ -437,13 +500,18 @@
       const current = select.value || "all";
       select.innerHTML = `<option value="all">All Animals</option>` + species.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
       select.value = [...select.options].some((o) => o.value === current) ? current : "all";
+      state.animalType = select.value;
     } catch {
       /* keep default */
     }
   }
 
+  function readFiltersFromUi() {
+    readFiltersFromState();
+  }
+
   async function downloadTemperature() {
-    readFiltersFromUi();
+    readFiltersFromState();
     const from = state.from || todayIso();
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
@@ -524,7 +592,7 @@
   }
 
   async function downloadComplete() {
-    readFiltersFromUi();
+    readFiltersFromState();
     const from = state.from || todayIso();
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
@@ -583,66 +651,75 @@
     setStatus(`Export complete · ${totalRows} temperature row(s). Audio ZIP requires device API.`);
   }
 
+  function openDateDropdown() {
+    const dd = document.getElementById("reports-dd-date");
+    const panel = document.getElementById("reports-date-panel");
+    const trigger = document.getElementById("reports-date-trigger");
+    if (!dd || !panel || !trigger) return;
+    dd.classList.add("is-open");
+    panel.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+  }
+
+  function closeDateDropdown() {
+    const dd = document.getElementById("reports-dd-date");
+    const panel = document.getElementById("reports-date-panel");
+    const trigger = document.getElementById("reports-date-trigger");
+    if (!dd || !panel || !trigger) return;
+    dd.classList.remove("is-open");
+    panel.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleDateDropdown() {
+    const dd = document.getElementById("reports-dd-date");
+    if (dd?.classList.contains("is-open")) closeDateDropdown();
+    else openDateDropdown();
+  }
+
   function bindUi() {
-    document.querySelectorAll(".reports-chip").forEach((btn) => {
+    document.getElementById("reports-date-trigger")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleDateDropdown();
+    });
+
+    document.querySelectorAll(".reports-dd-option[data-range]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
-        btn.classList.add("is-active");
-        applyQuickRange(btn.dataset.range || "today");
-        updateRangeLabels();
+        selectPresetRange(btn.dataset.range || "today");
       });
+    });
+
+    document.getElementById("reports-custom-range-apply")?.addEventListener("click", () => {
+      applyCustomRangeFromInputs();
     });
 
     document.getElementById("reports-date-from")?.addEventListener("change", (e) => {
       if (_syncingDates) return;
       state.from = e.target.value;
       state.quickRange = "custom";
-      document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
-      updateRangeLabels();
+      document.querySelectorAll(".reports-dd-option[data-range]").forEach((b) => b.classList.remove("is-active"));
+      document.querySelector(".reports-dd-custom")?.classList.add("is-active");
+      updateDateDropdownUi();
     });
+
     document.getElementById("reports-date-to")?.addEventListener("change", (e) => {
       if (_syncingDates) return;
       state.to = e.target.value;
       state.quickRange = "custom";
-      document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
-      updateRangeLabels();
+      document.querySelectorAll(".reports-dd-option[data-range]").forEach((b) => b.classList.remove("is-active"));
+      document.querySelector(".reports-dd-custom")?.classList.add("is-active");
+      updateDateDropdownUi();
     });
 
-    document.getElementById("reports-animal-type")?.addEventListener("change", (e) => {
-      state.animalType = e.target.value;
-    });
-    document.getElementById("reports-test-type")?.addEventListener("change", (e) => {
-      state.testType = e.target.value;
+    document.getElementById("reports-animal-type")?.addEventListener("change", () => {
+      applyAndScan();
     });
 
-    document.getElementById("reports-apply-filters")?.addEventListener("click", async () => {
-      readFiltersFromUi();
-      const rangeError = validateDateRange();
-      if (rangeError) {
-        setStatus(rangeError, true);
-        progressShow("Range too large", 0);
-        progressLog(rangeError, "error");
-        progressDone("Fix date range and try again", true);
-        return;
-      }
-      applyFiltersToReports();
-      const applyBtn = document.getElementById("reports-apply-filters");
-      if (applyBtn) applyBtn.disabled = true;
-      progressShow("Starting scan…", 1);
-      try {
-        await refreshCounts();
-        setStatus(`Filters applied · ${rangeLabel()}`);
-      } catch (err) {
-        setStatus(err.message || String(err), true);
-      } finally {
-        if (applyBtn) applyBtn.disabled = false;
-        setApplyButtonProgress(null);
-      }
+    document.getElementById("reports-test-type")?.addEventListener("change", () => {
+      applyAndScan();
     });
 
     document.getElementById("reports-reset-filters")?.addEventListener("click", () => {
-      document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
-      document.querySelector('.reports-chip[data-range="today"]')?.classList.add("is-active");
       const animal = document.getElementById("reports-animal-type");
       const test = document.getElementById("reports-test-type");
       if (animal) animal.value = "all";
@@ -650,14 +727,22 @@
       state.animalType = "all";
       state.testType = "all";
       applyQuickRange("today");
-      applyFiltersToReports();
-      setStatus("Filters reset to Today. Click Apply Filters to scan.");
+      syncReportDateHidden();
       const tempBadge = document.getElementById("reports-temp-count");
       const heartBadge = document.getElementById("reports-heart-count");
       const lungBadge = document.getElementById("reports-lung-count");
       if (tempBadge) tempBadge.textContent = "— Records";
       if (heartBadge) heartBadge.textContent = "— Files";
       if (lungBadge) lungBadge.textContent = "— Files";
+      applyAndScan();
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#reports-dd-date")) closeDateDropdown();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeDateDropdown();
     });
 
     document.querySelectorAll("[data-download]").forEach((btn) => {
@@ -668,6 +753,7 @@
         btn.textContent = "Working…";
         setStatus("");
         try {
+          readFiltersFromState();
           if (kind === "temperature") await downloadTemperature();
           else if (kind === "heart" || kind === "lung") await downloadAudioKind(kind);
         } catch (err) {
@@ -686,6 +772,7 @@
       if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
       setStatus("");
       try {
+        readFiltersFromState();
         await downloadComplete();
       } catch (err) {
         progressLog(err.message || String(err), "error");
@@ -703,22 +790,20 @@
       syncDateInputs();
       updateRangeLabels();
     }
-    applyFiltersToReports();
-    populateAnimalTypes();
+    syncReportDateHidden();
+    populateAnimalTypes().then(() => applyAndScan());
     renderHistory();
-    setStatus("Set filters and click Apply Filters to scan data.");
   }
 
   function init() {
     applyQuickRange("today");
-    document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
-    document.querySelector('.reports-chip[data-range="today"]')?.classList.add("is-active");
-    applyFiltersToReports();
+    syncReportDateHidden();
     bindUi();
     renderHistory();
+    setStatusStrip("", "Open date range to load data");
   }
 
   document.addEventListener("DOMContentLoaded", init);
 
-  global.VetReportsPage = { onShow, applyQuickRange, getFilters, refreshCounts };
+  global.VetReportsPage = { onShow, applyQuickRange, getFilters, refreshCounts, applyAndScan };
 })(window);
