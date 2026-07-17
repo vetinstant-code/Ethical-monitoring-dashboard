@@ -13,6 +13,14 @@
     custom: "Custom range",
   };
 
+  const ANIMAL_OPTIONS = [
+    { value: "all", label: "All Animals" },
+    { value: "Dogs", label: "Dogs" },
+    { value: "Cattle", label: "Cows" },
+    { value: "Cats", label: "Cats" },
+    { value: "Horses", label: "Horses" },
+  ];
+
   const state = {
     quickRange: "today",
     from: null,
@@ -639,35 +647,33 @@
     applyAndScan();
   }
 
-  async function populateAnimalTypes() {
+  function renderAnimalOptions(currentValue) {
     const panel = document.getElementById("reports-animal-panel");
     const hidden = document.getElementById("reports-animal-type");
     const label = document.getElementById("reports-animal-label");
     if (!panel || !hidden) return;
-    try {
-      const client = await ensureClient();
-      const pets = global.VetLiveApi?.getPets?.() || global.VetApiNormalize.normalizePets(await client.listPets());
-      const species = [...new Set(pets.map((p) => String(p.species || p.pet_species || "").trim()).filter(Boolean))].sort();
-      const current = hidden.value || "all";
-      const options = [{ value: "all", label: "All Animals" }, ...species.map((s) => ({ value: s, label: s }))];
-      panel.innerHTML = options
-        .map(
-          (o) =>
-            `<button type="button" class="reports-dd-option${o.value === current ? " is-active" : ""}" data-value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</button>`
-        )
-        .join("");
-      panel.querySelectorAll(".reports-dd-option").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          selectAnimalFilter(btn.dataset.value || "all", btn.textContent || "All Animals");
-        });
+
+    const current = currentValue || hidden.value || "all";
+    const options = [...ANIMAL_OPTIONS];
+    panel.innerHTML = options
+      .map(
+        (o) =>
+          `<button type="button" class="reports-dd-option${o.value === current ? " is-active" : ""}" data-value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</button>`
+      )
+      .join("");
+    panel.querySelectorAll(".reports-dd-option").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectAnimalFilter(btn.dataset.value || "all", btn.textContent || "All Animals");
       });
-      const active = options.find((o) => o.value === current) || options[0];
-      hidden.value = active.value;
-      state.animalType = active.value;
-      if (label) label.textContent = active.label;
-    } catch {
-      /* keep default */
-    }
+    });
+    const active = options.find((o) => o.value === current) || options[0];
+    hidden.value = active.value;
+    state.animalType = active.value;
+    if (label) label.textContent = active.label;
+  }
+
+  async function populateAnimalTypes() {
+    renderAnimalOptions(state.animalType || "all");
   }
 
   function selectAnimalFilter(value, labelText) {
@@ -1008,6 +1014,7 @@
 
   function init() {
     applyQuickRange("today");
+    renderAnimalOptions("all");
     syncReportDateHidden();
     bindUi();
     renderHistory();

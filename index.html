@@ -493,6 +493,10 @@
                 </button>
                 <div class="reports-dd-panel" id="reports-animal-panel" role="listbox" hidden>
                   <button type="button" class="reports-dd-option is-active" data-value="all">All Animals</button>
+                  <button type="button" class="reports-dd-option" data-value="Dogs">Dogs</button>
+                  <button type="button" class="reports-dd-option" data-value="Cattle">Cows</button>
+                  <button type="button" class="reports-dd-option" data-value="Cats">Cats</button>
+                  <button type="button" class="reports-dd-option" data-value="Horses">Horses</button>
                 </div>
               </div>
 
@@ -689,12 +693,12 @@
   <script src="dashboard-home.js?v=3"></script>
   <script src="live-api.js?v=28"></script>
   <script src="app-pages.js?v=8"></script>
-  <script src="reports-page.js?v=15"></script>
+  <script src="reports-page.js?v=16"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=18").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=19").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });
