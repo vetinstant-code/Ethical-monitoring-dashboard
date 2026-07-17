@@ -573,15 +573,40 @@
     return true;
   }
 
+  function abortDashboardSync() {
+    syncGeneration += 1;
+    store.loading = false;
+    pendingRefresh = false;
+    pendingForce = false;
+    store.lastFingerprint = null;
+  }
+
+  function isDashboardRoute() {
+    const hash = (location.hash || "#/").replace(/^#/, "") || "/";
+    return hash === "/" || hash === "";
+  }
+
+  function onDashboardShow() {
+    abortDashboardSync();
+    store.lastDate = null;
+    refreshTodayDashboard({ force: true });
+  }
+
   async function refreshTodayDashboard(opts = {}) {
     const force = !!opts.force;
 
-    // If a sync is already running, abort it and queue a fresh one for the new filters/date
     if (store.loading) {
-      pendingRefresh = true;
-      pendingForce = pendingForce || force;
-      syncGeneration += 1;
-      return;
+      if (force) {
+        syncGeneration += 1;
+        store.loading = false;
+        pendingRefresh = false;
+        pendingForce = false;
+      } else {
+        pendingRefresh = true;
+        pendingForce = pendingForce || force;
+        syncGeneration += 1;
+        return;
+      }
     }
 
     store.loading = true;
@@ -853,6 +878,7 @@
     refreshTodayDashboard({ force: true });
     pollingInterval = setInterval(async () => {
       if (!global.VetAuth?.isLoggedIn?.()) return;
+      if (!isDashboardRoute()) return;
       await refreshTodayDashboard();
     }, 60000);
   }
@@ -880,6 +906,7 @@
 
   function resetStore() {
     syncGeneration += 1;
+    store.loading = false;
     store.apiClient = null;
     store.deviceId = null;
     store.pets = [];
@@ -902,6 +929,7 @@
     });
 
     document.getElementById("header-refresh-btn")?.addEventListener("click", () => {
+      abortDashboardSync();
       refreshTodayDashboard({ force: true });
     });
 
@@ -909,6 +937,10 @@
       const hash = (location.hash || "#/").replace(/^#/, "");
       if (hash === "/vitals-today" || hash.startsWith("/vitals-today")) {
         global.VetAppPages?.route?.();
+        return;
+      }
+      if (isDashboardRoute()) {
+        scheduleForceRefresh();
       }
     });
 
@@ -942,6 +974,8 @@
     refreshTodayDashboard,
     scheduleForceRefresh,
     resetStore,
+    abortDashboardSync,
+    onDashboardShow,
     setApiClient,
     todayIsoIst,
     ensureClient,

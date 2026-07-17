@@ -200,6 +200,9 @@
   }
 
   function triggerDashboardSync() {
+    if (typeof global.VetLiveApi?.abortDashboardSync === "function") {
+      global.VetLiveApi.abortDashboardSync();
+    }
     if (typeof global.VetLiveApi?.scheduleForceRefresh === "function") {
       global.VetLiveApi.scheduleForceRefresh();
       return;

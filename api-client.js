@@ -50,7 +50,7 @@
       }
     }
 
-    async downloadBinary(endpoint, { baseUrl, deviceId, params } = {}) {
+    async downloadBinary(endpoint, { baseUrl, deviceId, params, timeoutMs } = {}) {
       const url = new URL(this._url(endpoint, baseUrl));
       if (params) {
         Object.entries(params).forEach(([k, v]) => {
@@ -61,14 +61,21 @@
         "X-Device-Id": deviceId || this.deviceId,
         "ngrok-skip-browser-warning": "1",
       };
-      const res = await fetch(url.toString(), {
-        method: "GET",
-        headers,
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} when downloading binary ${endpoint}`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Number(timeoutMs) || this.timeoutMs);
+      try {
+        const res = await fetch(url.toString(), {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} when downloading binary ${endpoint}`);
+        }
+        return res.arrayBuffer();
+      } finally {
+        clearTimeout(timer);
       }
-      return res.arrayBuffer();
     }
 
     setDeviceId(deviceId) {

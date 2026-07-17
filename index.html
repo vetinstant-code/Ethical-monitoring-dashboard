@@ -135,7 +135,8 @@
               <span>Animals</span>
             </a>
           </li>
-          <li class="nav-item">
+          <!-- Vitals — hidden until feature is ready -->
+          <li class="nav-item" hidden>
             <a href="#" class="nav-link">
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
@@ -155,7 +156,8 @@
               <span>Reports</span>
             </a>
           </li>
-          <li class="nav-item">
+          <!-- Settings — hidden until feature is ready -->
+          <li class="nav-item" hidden>
             <a href="#" class="nav-link">
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3"></circle>
@@ -685,20 +687,20 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="config.api.js?v=12"></script>
-  <script src="api-client.js?v=13"></script>
+  <script src="api-client.js?v=14"></script>
   <script src="auth.js?v=13"></script>
   <script src="api-adapter.js?v=9"></script>
-  <script src="app-filters.js?v=8"></script>
+  <script src="app-filters.js?v=9"></script>
   <script src="excel-generator.js?v=19"></script>
   <script src="dashboard-home.js?v=3"></script>
-  <script src="live-api.js?v=28"></script>
-  <script src="app-pages.js?v=8"></script>
+  <script src="live-api.js?v=29"></script>
+  <script src="app-pages.js?v=9"></script>
   <script src="reports-page.js?v=18"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=22").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=24").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

@@ -511,6 +511,9 @@
       "Real-time overview of ExamD clinical validation study.",
       false
     );
+    if (name === "dashboard") {
+      global.VetLiveApi?.onDashboardShow?.();
+    }
   }
 
   function bindUi() {
