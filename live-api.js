@@ -362,7 +362,7 @@
     };
   }
 
-  async function resolvePetsForDate(client, targetDate, allPets, preFetchedDaily = undefined) {
+  async function resolvePetsForDate(client, targetDate, allPets, preFetchedDaily = undefined, gen = null) {
     let list = [];
     if (preFetchedDaily !== undefined) {
       list = (preFetchedDaily?.pets || []).map(dailyPetRowFrom);
@@ -377,9 +377,11 @@
 
     const hits = [];
     await mapPool(registered, CONCURRENCY, async (pet) => {
+      if (gen != null && gen !== syncGeneration) return;
       const petId = pet.pet_id || pet.id;
       try {
         const sessionsResponse = await client.examSessions(petId);
+        if (gen != null && gen !== syncGeneration) return;
         const sessions = global.VetApiNormalize.normalizeSessions(sessionsResponse);
         const hasDate = sessions.some((s) => sessionStartedDateIst(s) === targetDate);
         if (hasDate) hits.push(pet);
@@ -387,6 +389,7 @@
         console.warn(`Failed session scan for pet ${petId}`, err);
       }
     });
+    if (gen != null && gen !== syncGeneration) return { list: [], source: "aborted" };
     return { list: hits, source: hits.length ? "exam-sessions" : "none" };
   }
 
@@ -724,26 +727,34 @@
     }
   }
 
-  function renderIfChanged(payload, { force = false, stage = "final" } = {}) {
+  function renderIfChanged(payload, { force = false, stage = "final", targetDate = null } = {}) {
     if (!payload) return false;
-    // Skip empty early paint when we already have detailed data for the same date
-    if (stage === "early" && store.lastDate === getDashboardDate() && store.lastFingerprint) {
-      return false;
+    const dateKey = targetDate || getDashboardDate();
+
+    // Early skeleton: paint UI but do not lock lastFingerprint (final must always win).
+    if (stage === "early") {
+      if (!force && store.lastDate === dateKey && store.lastFingerprint) return false;
+      store.lastDate = dateKey;
+      global.VetDashboardHome?.render?.(payload);
+      return true;
     }
+
     const fp = payloadFingerprint(payload);
     if (!force && fp === store.lastFingerprint) return false;
     store.lastFingerprint = fp;
-    store.lastDate = getDashboardDate();
+    store.lastDate = dateKey;
     global.VetDashboardHome?.render?.(payload);
     return true;
   }
 
   function abortDashboardSync() {
+    // Invalidate in-flight work only. Do not clear store.loading —
+    // the owning sync's finally block must remain the sole owner.
     syncGeneration += 1;
-    store.loading = false;
     pendingRefresh = false;
     pendingForce = false;
     store.lastFingerprint = null;
+    store.lastDate = null;
   }
 
   function isDashboardRoute() {
@@ -761,21 +772,19 @@
     const force = !!opts.force;
 
     if (store.loading) {
-      if (force) {
-        syncGeneration += 1;
-        store.loading = false;
-        pendingRefresh = false;
-        pendingForce = false;
-      } else {
+      if (!force) {
+        // Queue a follow-up — do NOT bump syncGeneration (would kill an in-flight date load).
         pendingRefresh = true;
-        pendingForce = pendingForce || force;
-        syncGeneration += 1;
         return;
       }
+      // Force: invalidate the current sync and start a new one without clearing loading.
+      syncGeneration += 1;
+      pendingRefresh = false;
+      pendingForce = false;
     }
 
-    store.loading = true;
     const gen = ++syncGeneration;
+    store.loading = true;
     if (force) {
       store.lastFingerprint = null;
     }
@@ -792,7 +801,30 @@
 
     const targetDate = getDashboardDate();
     const fetchAudio = needsAudioTests();
-    const dateChanged = store.lastDate != null && store.lastDate !== targetDate;
+    const dateChanged = store.lastDate !== targetDate;
+
+    // Immediate skeleton so the UI never stays on the previous date / "Loading…"
+    if (force || dateChanged) {
+      renderIfChanged(
+        {
+          dateLabel: istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`)),
+          totalToday: 0,
+          yesterdayCount: null,
+          speciesCounts: {},
+          testCounts: { temperature: 0, ecg: 0, spo2: 0, heart: 0, lung: 0 },
+          hourly: Array.from({ length: 11 }, (_, i) => ({
+            label: `${String(i + 8).padStart(2, "0")}:00`,
+            count: 0,
+          })),
+          statusCounts: { completed: 0, inProgress: 0, failed: 0 },
+          completedAllTime: store.pets.length,
+          cases: [],
+          comparisons: [],
+          notes: [`Loading data for ${istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`))}…`],
+        },
+        { force: true, stage: "early", targetDate }
+      );
+    }
 
     try {
       const client = await ensureClient();
@@ -834,9 +866,10 @@
         if (gen !== syncGeneration) return;
         store.pets = global.VetApiNormalize.normalizePets(rawPets);
         store.petMeta = {};
-        resolved = await resolvePetsForDate(client, targetDate, store.pets, dailyResp);
+        resolved = await resolvePetsForDate(client, targetDate, store.pets, dailyResp, gen);
       }
       if (gen !== syncGeneration) return;
+      if (resolved.source === "aborted") return;
 
       let dailyPetsList = resolved.list || [];
       dailyPetsList = dailyPetsList.filter((p) => {
@@ -871,7 +904,7 @@
             comparisons: [],
             notes: [`Loading detailed case data for ${dailyPetsList.length} animal(s)…`],
           },
-          { force: true, stage: "early" }
+          { force: true, stage: "early", targetDate }
         );
       }
 
@@ -1026,7 +1059,11 @@
         notes,
       };
 
-      const didRender = renderIfChanged(finalPayload, { force: force || dateChanged, stage: "final" });
+      const didRender = renderIfChanged(finalPayload, {
+        force: true,
+        stage: "final",
+        targetDate,
+      });
 
       setProgress(100, didRender ? "Done" : "Up to date");
       const now = new Date();
@@ -1040,18 +1077,40 @@
       }
     } catch (err) {
       console.error("[Live API Sync Failed]", err);
+      if (gen !== syncGeneration) return;
       store.error = err.message || String(err);
       if (syncText) syncText.textContent = "Sync failed";
+      renderIfChanged(
+        {
+          dateLabel: istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`)),
+          totalToday: 0,
+          yesterdayCount: null,
+          speciesCounts: {},
+          testCounts: { temperature: 0, ecg: 0, spo2: 0, heart: 0, lung: 0 },
+          hourly: Array.from({ length: 11 }, (_, i) => ({
+            label: `${String(i + 8).padStart(2, "0")}:00`,
+            count: 0,
+          })),
+          statusCounts: { completed: 0, inProgress: 0, failed: 0 },
+          completedAllTime: store.pets.length,
+          cases: [],
+          comparisons: [],
+          notes: [`Failed to load data: ${store.error}`],
+        },
+        { force: true, stage: "final", targetDate }
+      );
       hideProgress();
     } finally {
+      // Only the active sync owns loading / pending restart / progress teardown.
+      if (gen !== syncGeneration) return;
+
       store.loading = false;
       const shouldRunPending = pendingRefresh;
-      const nextForce = pendingForce || force;
       pendingRefresh = false;
       pendingForce = false;
 
       if (shouldRunPending) {
-        Promise.resolve().then(() => refreshTodayDashboard({ force: nextForce }));
+        Promise.resolve().then(() => refreshTodayDashboard({ force: true }));
       } else {
         setTimeout(() => {
           if (syncIcon && !store.loading) syncIcon.classList.remove("spinning");

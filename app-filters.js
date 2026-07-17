@@ -221,6 +221,7 @@
       syncUi();
     }
     closeAllDropdowns();
+    // Abort any in-flight sync for the previous date, then force-load the selected date.
     triggerDashboardSync();
   }
 
