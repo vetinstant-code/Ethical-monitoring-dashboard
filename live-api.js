@@ -563,7 +563,6 @@
           const hour = sessionHourIst(s);
 
           let tempVal = null;
-          let refVal = null;
           let statusLabel = "Completed";
           let statusClass = "stable";
           const tests = new Set();
@@ -571,7 +570,6 @@
           const irSummary = pickSessionSummary(summaries, sid, true);
           const rectSummary = pickSessionSummary(summaries, sid, false);
           tempVal = tempFromSummary(irSummary, rectSummary);
-          refVal = refFromSummary(irSummary || rectSummary);
 
           if (tempVal != null) tests.add("Temperature");
 
@@ -610,7 +608,6 @@
             statusClass = "low";
           }
 
-          const testsLabel = tests.size ? [...tests].join(", ") : "—";
           const ts = parseApiTimestamp(s.started_at || s.created_at)?.getTime() || 0;
 
           local.activities.push({
@@ -622,18 +619,35 @@
             statusClass,
             timestamp: ts,
           });
+      }
 
-          local.cases.push({
-            time: timeStr || "—",
-            name: meta.name,
-            displayId: meta.displayId || "—",
-            id: petId,
-            species: meta.species,
-            tests: testsLabel,
-            statusLabel,
-            statusClass,
-            timestamp: ts,
-          });
+      // Recent Cases is built only from comparison rows (exact same sessions).
+      for (const row of local.comparisons) {
+        const mean = row.metrics?.mean;
+        let statusLabel = "Completed";
+        let statusClass = "stable";
+        if (mean != null) {
+          if (mean > 38.6 || mean < 37.2) {
+            statusLabel = mean > 38.6 ? "Critical" : "Low";
+            statusClass = "critical";
+          }
+        }
+        const d = row.timestamp ? new Date(row.timestamp) : null;
+        const timeStr = d
+          ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })
+          : "—";
+        local.cases.push({
+          time: timeStr,
+          name: row.name,
+          displayId: row.displayId || "—",
+          id: row.id,
+          species: row.species,
+          tests: "Temperature",
+          statusLabel,
+          statusClass,
+          timestamp: row.timestamp || 0,
+          sessionId: String(row.sessionId || "").trim(),
+        });
       }
     } catch (err) {
       console.warn(`Failed sessions for pet ${petId}`, err);
@@ -911,13 +925,39 @@
       setProgress(97, "Rendering…");
 
       activities.sort((a, b) => b.timestamp - a.timestamp);
-      cases.sort((a, b) => b.timestamp - a.timestamp);
       comparisons.sort((a, b) => {
         if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
         const byName = (a.name || "").localeCompare(b.name || "");
         if (byName) return byName;
         return String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
       });
+
+      // Recent Cases = exact same sessions as Reference vs ExamD (1:1).
+      const recentCases = comparisons.map((row) => {
+        const mean = row.metrics?.mean;
+        let statusLabel = "Completed";
+        let statusClass = "stable";
+        if (mean != null && (mean > 38.6 || mean < 37.2)) {
+          statusLabel = mean > 38.6 ? "Critical" : "Low";
+          statusClass = "critical";
+        }
+        const d = row.timestamp ? new Date(row.timestamp) : null;
+        const timeStr = d
+          ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })
+          : "—";
+        return {
+          time: timeStr,
+          name: row.name,
+          displayId: row.displayId || "—",
+          id: row.id,
+          species: row.species,
+          tests: "Temperature",
+          statusLabel,
+          statusClass,
+          timestamp: row.timestamp || 0,
+          sessionId: String(row.sessionId || "").trim(),
+        };
+      }).sort((a, b) => b.timestamp - a.timestamp);
 
       const hourly = Object.keys(hourlyMap)
         .map((h) => ({ label: `${String(h).padStart(2, "0")}:00`, count: hourlyMap[h] }))
@@ -929,7 +969,8 @@
       });
       if (!Object.keys(speciesCounts).length) Object.assign(speciesCounts, earlySpecies);
 
-      const uniquePetIds = new Set(cases.map((c) => c.id));
+      // KPI counts all day's activity pets; Recent Cases is comparison-filtered above.
+      const uniquePetIds = new Set(activities.map((a) => a.id));
       const totalToday = uniquePetIds.size || dailyPetsList.length;
 
       const elVitals = document.getElementById("kpi-vitals-today");
@@ -980,7 +1021,7 @@
         hourly,
         statusCounts,
         completedAllTime: store.pets.length,
-        cases,
+        cases: recentCases,
         comparisons,
         notes,
       };
@@ -994,8 +1035,8 @@
       hideProgress();
       store.error = null;
 
-      if (!fetchAudio && cases.length) {
-        enrichAudioCounts(client, cases, testCounts, gen, targetDate).catch(() => {});
+      if (!fetchAudio && recentCases.length) {
+        enrichAudioCounts(client, recentCases, testCounts, gen, targetDate).catch(() => {});
       }
     } catch (err) {
       console.error("[Live API Sync Failed]", err);
