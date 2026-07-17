@@ -152,29 +152,25 @@
 
     if (tempBtn) {
       tempBtn.disabled = !canDownloadTemp;
-      tempBtn.textContent = scanning ? "Scanning…" : canDownloadTemp ? "Download" : "No data yet";
-      tempBtn.title = canDownloadTemp ? "" : "No temperature records in this range";
+      tempBtn.textContent = "Download";
+      tempBtn.title = canDownloadTemp ? "Download temperature Excel for this range" : "Scan first — no temperature records in range";
     }
 
     if (heartBtn) {
       heartBtn.disabled = !canDownloadHeart;
-      heartBtn.textContent = scanning ? "Scanning…" : canDownloadHeart ? "Download" : "No files yet";
-      heartBtn.title = canDownloadHeart ? "Download heart sound WAV files as ZIP" : "No heart recordings in this range";
+      heartBtn.textContent = "Download";
+      heartBtn.title = canDownloadHeart ? "Download heart sound WAV files as ZIP" : "Scan first — no heart recordings in range";
     }
 
     if (lungBtn) {
       lungBtn.disabled = !canDownloadLung;
-      lungBtn.textContent = scanning ? "Scanning…" : canDownloadLung ? "Download" : "No files yet";
-      lungBtn.title = canDownloadLung ? "Download lung sound WAV files as ZIP" : "No lung recordings in this range";
+      lungBtn.textContent = "Download";
+      lungBtn.title = canDownloadLung ? "Download lung sound WAV files as ZIP" : "Scan first — no lung recordings in range";
     }
 
     if (completeBtn) {
       completeBtn.disabled = !canDownloadComplete;
-      completeBtn.textContent = scanning
-        ? "Scanning…"
-        : canDownloadComplete
-          ? "Download Complete ZIP"
-          : "No data yet";
+      completeBtn.textContent = "Download Complete ZIP";
       completeBtn.title = canDownloadComplete
         ? "ZIP with temperature Excel + heart/lung WAV for the scanned range"
         : "Scan data first — nothing to export yet";

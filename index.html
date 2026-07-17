@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=44" />
+  <link rel="stylesheet" href="styles.css?v=45" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -569,7 +569,7 @@
                   Excel
                 </span>
               </div>
-              <button type="button" class="reports-download-btn reports-download-btn--temp" data-download="temperature" disabled>No data yet</button>
+              <button type="button" class="reports-download-btn reports-download-btn--temp" data-download="temperature" disabled>Download</button>
             </article>
 
             <article class="reports-dl-card reports-dl-card--heart">
@@ -595,7 +595,7 @@
                   ZIP
                 </span>
               </div>
-              <button type="button" class="reports-download-btn reports-download-btn--heart" data-download="heart" disabled>No files yet</button>
+              <button type="button" class="reports-download-btn reports-download-btn--heart" data-download="heart" disabled>Download</button>
             </article>
 
             <article class="reports-dl-card reports-dl-card--lung">
@@ -624,7 +624,7 @@
                   ZIP
                 </span>
               </div>
-              <button type="button" class="reports-download-btn reports-download-btn--lung" data-download="lung" disabled>No files yet</button>
+              <button type="button" class="reports-download-btn reports-download-btn--lung" data-download="lung" disabled>Download</button>
             </article>
           </div>
 
@@ -641,7 +641,7 @@
                 <p>Download all scanned data — temperature Excel plus heart and lung WAV files — in one ZIP.</p>
               </div>
             </div>
-            <button type="button" class="reports-complete-btn" id="reports-download-complete" disabled>No data yet</button>
+            <button type="button" class="reports-complete-btn" id="reports-download-complete" disabled>Download Complete ZIP</button>
           </div>
 
           <!-- Download history -->
@@ -689,12 +689,12 @@
   <script src="dashboard-home.js?v=3"></script>
   <script src="live-api.js?v=28"></script>
   <script src="app-pages.js?v=8"></script>
-  <script src="reports-page.js?v=13"></script>
+  <script src="reports-page.js?v=14"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=16").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=17").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });
