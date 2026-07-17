@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f2237" />
+  <meta name="description" content="VetInstant Animal Health Intelligence report compilation center." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="VetInstant — Animal Health Intelligence" />
+  <meta property="og:description" content="Animal health intelligence report compiler" />
+  <title>VetInstant — Animal Health Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css?v=38" />
+</head>
+<body>
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="login-screen" hidden>
+    <div class="login-shell">
+      <aside class="login-brand-panel">
+        <div class="login-brand">
+          <img src="assets/logo-vetinstant.png" alt="VetInstant" class="login-brand-logo" />
+          <div>
+            <h1>VetInstant</h1>
+            <p>Animal Health Intelligence</p>
+          </div>
+        </div>
+        <div class="login-brand-copy">
+          <h2>Ethical Committee Dashboard</h2>
+          <p>Sign in with the ARMY device credentials to review vitals, rounds activity, and generate accuracy reports.</p>
+        </div>
+      </aside>
+
+      <main class="login-form-panel" id="login-form-panel" data-login-theme="ecg">
+        <div class="login-bg-animation" aria-hidden="true">
+          <div class="login-mesh"></div>
+          <div class="login-fluid-blob login-fluid-blob--1"></div>
+          <div class="login-fluid-blob login-fluid-blob--2"></div>
+
+          <canvas id="login-ecg-canvas" class="login-ecg-canvas"></canvas>
+
+          <div class="login-logo-field" id="login-logo-field">
+            <img class="login-logo-mark" src="assets/logo-vetinstant.png" alt="" data-i="1" />
+            <img class="login-logo-mark" src="assets/logo-vetinstant.png" alt="" data-i="2" />
+            <img class="login-logo-mark" src="assets/logo-vetinstant.png" alt="" data-i="3" />
+            <img class="login-logo-mark" src="assets/logo-vetinstant.png" alt="" data-i="4" />
+          </div>
+        </div>
+
+        <div class="login-card">
+          <h2 class="login-card-title">Sign in</h2>
+          <p class="login-card-sub">Use your ARMY device account to continue.</p>
+
+          <form id="login-form" class="login-form" autocomplete="on">
+            <div class="form-input-group">
+              <label for="login-device">Device ID</label>
+              <input
+                type="text"
+                id="login-device"
+                class="form-field-input"
+                value="ARMY"
+                readonly
+                aria-readonly="true"
+              />
+            </div>
+
+            <div class="form-input-group">
+              <label for="login-password">Password</label>
+              <input
+                type="password"
+                id="login-password"
+                class="form-field-input"
+                placeholder="Enter password"
+                required
+                autocomplete="current-password"
+              />
+            </div>
+
+            <p id="login-error" class="login-error" hidden></p>
+
+            <button type="submit" id="login-submit" class="btn-generate-report login-submit-btn">
+              Sign in to dashboard
+            </button>
+          </form>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- APPLICATION CONTAINER WRAPPER -->
+  <div id="app-root" class="dashboard-container" hidden>
+    
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <img src="assets/logo-vetinstant.png" alt="VetInstant Logo" class="brand-logo" />
+        <div class="brand-text">
+          <h2>VetInstant</h2>
+          <p>Animal Health Intelligence</p>
+        </div>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <ul class="nav-list">
+          <li class="nav-item active" data-nav="dashboard">
+            <a href="#/" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+              </svg>
+              <span>Dashboard</span>
+            </a>
+          </li>
+          <li class="nav-item" data-nav="vitals-today">
+            <a href="#/vitals-today" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+              </svg>
+              <span>Rounds Activity</span>
+            </a>
+          </li>
+          <li class="nav-item" data-nav="animals">
+            <a href="#/animals" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4.5 16.5c-1.5 1.26-2.5 3.19-2.5 5.5h20c0-2.31-1-4.24-2.5-5.5"></path>
+                <path d="M12 2a5 5 0 1 0 0 10 5 5 0 1 0 0-10z"></path>
+              </svg>
+              <span>Animals</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="22"></line>
+              </svg>
+              <span>Vitals</span>
+            </a>
+          </li>
+          <li class="nav-item" data-nav="reports">
+            <a href="#/reports" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <span>Reports</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              <span>Settings</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+    
+    <!-- MAIN CONTENT AREA -->
+    <main class="main-content">
+      
+      <!-- TOP GREETING HEADER -->
+      <header class="main-header">
+        <div class="greeting-block">
+          <button type="button" class="page-back-btn" id="page-back-btn" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back</span>
+          </button>
+          <h1 class="greeting-title" id="page-title">Good afternoon, Mr Rajkumar</h1>
+          <p class="greeting-subtext" id="page-subtitle">Here's what's happening with the ethical committee today.</p>
+        </div>
+        
+        <div class="header-actions">
+          <div class="dashboard-header-chrome" id="dashboard-header-chrome" hidden>
+          <div class="dashboard-header-filters" id="dashboard-header-filters">
+            <!-- Date filter -->
+            <div class="dash-dd" id="dash-dd-date" data-dd="date">
+              <button type="button" class="dash-filter-pill dash-dd-trigger" id="dashboard-filter-date-btn" aria-haspopup="dialog" aria-expanded="false">
+                <svg class="dash-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <span class="dash-dd-label" id="dashboard-filter-date-label">—</span>
+                <svg class="dash-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+              <div class="dash-dd-panel dash-dd-panel--calendar" id="dash-dd-date-panel" hidden role="dialog" aria-label="Pick date">
+                <div class="dash-cal-head">
+                  <button type="button" class="dash-cal-nav" id="dash-cal-prev" aria-label="Previous month">‹</button>
+                  <strong class="dash-cal-title" id="dash-cal-title">June 2026</strong>
+                  <button type="button" class="dash-cal-nav" id="dash-cal-next" aria-label="Next month">›</button>
+                </div>
+                <div class="dash-cal-dows" aria-hidden="true">
+                  <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+                </div>
+                <div class="dash-cal-grid" id="dash-cal-grid"></div>
+                <div class="dash-cal-footer">
+                  <button type="button" class="dash-cal-today" id="dash-cal-today">Today</button>
+                </div>
+              </div>
+              <input type="hidden" id="dashboard-filter-date" value="" />
+            </div>
+
+            <!-- Test type filter -->
+            <div class="dash-dd" id="dash-dd-test" data-dd="test">
+              <button type="button" class="dash-filter-pill dash-dd-trigger" id="dashboard-filter-test-btn" aria-haspopup="listbox" aria-expanded="false">
+                <span class="dash-dd-label" id="dashboard-filter-test-label">All Tests</span>
+                <svg class="dash-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+              <div class="dash-dd-panel" id="dash-dd-test-panel" hidden role="listbox" aria-label="Test type">
+                <button type="button" class="dash-dd-option is-active" data-value="all" role="option">All Tests</button>
+                <button type="button" class="dash-dd-option" data-value="temperature" role="option">Temperature</button>
+                <button type="button" class="dash-dd-option" data-value="ecg" role="option">ECG</button>
+                <button type="button" class="dash-dd-option" data-value="spo2" role="option">SpO2</button>
+                <button type="button" class="dash-dd-option" data-value="heart" role="option">Heart Sound</button>
+                <button type="button" class="dash-dd-option" data-value="lung" role="option">Lung Sound</button>
+              </div>
+            </div>
+
+            <!-- Animal type filter -->
+            <div class="dash-dd" id="dash-dd-animal" data-dd="animal">
+              <button type="button" class="dash-filter-pill dash-dd-trigger" id="dashboard-filter-animal-btn" aria-haspopup="listbox" aria-expanded="false">
+                <span class="dash-dd-label" id="dashboard-filter-animal-label">All Animals</span>
+                <svg class="dash-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+              <div class="dash-dd-panel" id="dash-dd-animal-panel" hidden role="listbox" aria-label="Animal type">
+                <button type="button" class="dash-dd-option is-active" data-value="all" role="option">All Animals</button>
+                <button type="button" class="dash-dd-option" data-value="Dogs" role="option">Dogs</button>
+                <button type="button" class="dash-dd-option" data-value="Cattle" role="option">Cattle</button>
+                <button type="button" class="dash-dd-option" data-value="Cats" role="option">Cats</button>
+                <button type="button" class="dash-dd-option" data-value="Horses" role="option">Horses</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="sync-status-pill" id="sync-status-indicator">
+            <svg class="sync-icon-spin" id="sync-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+              <polyline points="21 3 21 9 15 9"></polyline>
+            </svg>
+            <div class="sync-status-copy">
+              <span class="sync-text" id="sync-text">Synced</span>
+              <div class="dash-progress" id="dash-progress" hidden>
+                <div class="dash-progress-track">
+                  <div class="dash-progress-fill" id="dash-progress-fill"></div>
+                </div>
+                <span class="dash-progress-pct" id="dash-progress-pct">0%</span>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" class="header-refresh-btn" id="header-refresh-btn" title="Refresh dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </button>
+          </div>
+
+          <button type="button" class="btn-signout-logout" id="logout-btn">Sign out</button>
+        </div>
+      </header>
+
+      <!-- Hidden — report date comes from Reports filters only -->
+      <input type="hidden" id="app-report-date" value="" />
+
+      <!-- VIEW: DASHBOARD HOME -->
+      <div id="view-dashboard" class="app-view">
+        <!-- Row 1: species KPI strip -->
+        <section class="cv-kpi-strip">
+          <button type="button" class="cv-kpi-main kpi-card-clickable" id="kpi-card-total-animals">
+            <div class="cv-kpi-main-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+            </div>
+            <div>
+              <span class="cv-kpi-label">Total Animals Tested Today</span>
+              <h3 class="cv-kpi-value" id="kpi-total-animals">0</h3>
+              <span class="cv-kpi-trend" id="kpi-trend-total">—</span>
+            </div>
+          </button>
+          <div class="cv-species-grid" id="cv-species-cards"></div>
+        </section>
+
+        <!-- Row 2: progress + charts -->
+        <section class="cv-row-3">
+          <article class="cv-card cv-progress-card">
+            <h3 class="cv-card-title">Validation Progress (All Time)</h3>
+            <div class="cv-progress-stats">
+              <div><span>Target Animals</span><strong id="cv-target-count">1000</strong></div>
+              <div><span>Completed</span><strong id="cv-completed-count">0</strong></div>
+              <div><span>Remaining</span><strong id="cv-remaining-count">1000</strong></div>
+            </div>
+            <div class="cv-progress-bar"><div class="cv-progress-fill" id="cv-progress-fill"></div></div>
+            <p class="cv-progress-caption" id="cv-progress-caption">0% of target completed</p>
+          </article>
+          <article class="cv-card">
+            <h3 class="cv-card-title">Tests Conducted Today</h3>
+            <div class="cv-chart-wrap"><canvas id="cv-tests-chart"></canvas></div>
+          </article>
+          <article class="cv-card">
+            <h3 class="cv-card-title">Today's Timeline (By Hour)</h3>
+            <div class="cv-chart-wrap"><canvas id="cv-timeline-chart"></canvas></div>
+          </article>
+        </section>
+
+        <!-- Row 3: distribution + status + summary -->
+        <section class="cv-row-3">
+          <article class="cv-card">
+            <h3 class="cv-card-title">Animal Distribution Today</h3>
+            <div class="cv-chart-wrap cv-chart-wrap--sm"><canvas id="cv-distribution-chart"></canvas></div>
+          </article>
+          <article class="cv-card">
+            <h3 class="cv-card-title">Validation Status Today</h3>
+            <div class="cv-chart-wrap cv-chart-wrap--sm"><canvas id="cv-status-chart"></canvas></div>
+          </article>
+          <article class="cv-card cv-summary-card">
+            <h3 class="cv-card-title">Clinical Validation Summary (Today)</h3>
+            <div class="cv-summary-grid">
+              <div class="cv-summary-box kpi-card-clickable" id="cv-box-tested"><span>Animals Tested</span><strong id="cv-sum-tested">0</strong></div>
+              <div class="cv-summary-box"><span>Successful Cases</span><strong id="cv-sum-success">0</strong></div>
+              <div class="cv-summary-box"><span>Failed Cases</span><strong id="cv-sum-failed">0</strong></div>
+              <div class="cv-summary-box cv-summary-box--rate"><span>Success Rate</span><strong id="cv-sum-rate">0%</strong></div>
+            </div>
+          </article>
+        </section>
+
+        <!-- Row 4: tables -->
+        <section class="cv-row-2">
+          <article class="cv-card">
+            <h3 class="cv-card-title">Recent Cases (Today)</h3>
+            <div class="rounds-table-scroller cv-table-scroll">
+              <table class="rounds-log-table">
+                <thead><tr><th>Time</th><th>Animal</th><th>Species</th><th>Tests</th><th>Status</th></tr></thead>
+                <tbody id="cv-recent-cases-body"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="cv-card">
+            <h3 class="cv-card-title">Reference vs ExamD Comparison (Temperature °C)</h3>
+            <div class="cv-compare-layout">
+              <div class="rounds-table-scroller cv-table-scroll">
+                <table class="rounds-log-table">
+                  <thead><tr><th>Animal ID</th><th>Species</th><th>ExamD (°C)</th><th>Reference (°C)</th><th>Difference (°C)</th></tr></thead>
+                  <tbody id="cv-compare-body"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+                </table>
+              </div>
+              <aside class="cv-stats-panel">
+                <div class="cv-stat-line"><span>Mean Error</span><strong id="cv-stat-mean">—</strong></div>
+                <div class="cv-stat-line"><span>MAE</span><strong id="cv-stat-mae">—</strong></div>
+                <div class="cv-stat-line"><span>SD</span><strong id="cv-stat-sd">—</strong></div>
+                <div class="cv-stat-line"><span>R²</span><strong id="cv-stat-r2">—</strong></div>
+                <div class="cv-stat-pass"><span>Acceptance Criteria (±0.2 °C)</span><strong id="cv-stat-pass">—</strong></div>
+              </aside>
+            </div>
+          </article>
+        </section>
+
+        <section class="cv-row-1">
+          <article class="cv-card">
+            <h3 class="cv-card-title">Notes / Observations (Today)</h3>
+            <ul class="cv-notes-list" id="cv-notes-list">
+              <li>Loading observations…</li>
+            </ul>
+          </article>
+        </section>
+
+        <!-- Hidden vitals KPI + activity log hooks for live-api -->
+        <span id="kpi-vitals-today" hidden>0</span>
+        <span id="trend-vitals-diff" hidden></span>
+        <button type="button" id="kpi-card-vitals-today" hidden aria-hidden="true"></button>
+        <table hidden><tbody id="activity-table-body"></tbody></table>
+        <input type="text" id="excel-device-id" value="ARMY" readonly hidden />
+        <div id="report-result-box" hidden></div>
+        <span id="report-result-title" hidden></span>
+        <span id="report-result-subtext" hidden></span>
+        <button type="button" id="btn-generate-excel" hidden></button>
+        <input type="checkbox" id="chk-auto-polling" checked hidden />
+      </div>
+
+      <!-- VIEW: ALL ANIMALS BY CATEGORY -->
+      <div id="view-animals" class="app-view" hidden>
+        <article class="standard-card page-panel-card">
+          <div class="card-header-block">
+            <h2 class="card-title">Animals by category</h2>
+            <p class="card-subtitle">All registered animals grouped by species. Select one to view temperature history.</p>
+          </div>
+          <div id="animals-category-root" class="page-panel-body">
+            <p class="empty-state">Loading animals…</p>
+          </div>
+        </article>
+      </div>
+
+      <!-- VIEW: VITALS CHECKED TODAY -->
+      <div id="view-vitals-today" class="app-view" hidden>
+        <article class="standard-card page-panel-card">
+          <div class="card-header-block">
+            <h2 class="card-title">Vitals checked today</h2>
+            <p class="card-subtitle" id="vitals-today-subtitle">Animals with readings on the selected date. Select one for history.</p>
+          </div>
+          <div id="vitals-today-root" class="page-panel-body">
+            <p class="empty-state">Loading today’s vitals…</p>
+          </div>
+        </article>
+      </div>
+
+      <!-- VIEW: ANIMAL TEMPERATURE HISTORY -->
+      <div id="view-animal-history" class="app-view" hidden>
+        <article class="standard-card page-panel-card">
+          <div class="card-header-block">
+            <h2 class="card-title" id="history-animal-name">Animal</h2>
+            <p class="card-subtitle" id="history-animal-meta">Temperature history</p>
+          </div>
+          <div id="animal-history-root" class="page-panel-body">
+            <p class="empty-state">Loading temperature history…</p>
+          </div>
+        </article>
+      </div>
+
+      <!-- VIEW: REPORTS -->
+      <div id="view-reports" class="app-view" hidden>
+        <section class="reports-page">
+          <!-- Filters bar -->
+          <div class="reports-toolbar">
+            <div class="reports-toolbar-title">
+              <h2>Reports</h2>
+              <p>Download clinical validation data</p>
+            </div>
+
+            <div class="reports-filters">
+              <div class="reports-quick-select" role="group" aria-label="Quick date select">
+                <button type="button" class="reports-chip is-active" data-range="today">Today</button>
+                <button type="button" class="reports-chip" data-range="yesterday">Yesterday</button>
+                <button type="button" class="reports-chip" data-range="last7">Last 7 Days</button>
+                <button type="button" class="reports-chip" data-range="last30">Last 30 Days</button>
+                <button type="button" class="reports-chip" data-range="all">All Data</button>
+              </div>
+
+              <div class="reports-date-range">
+                <label class="reports-date-field">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                  <input type="date" id="reports-date-from" />
+                </label>
+                <span class="reports-date-to-label">To</span>
+                <label class="reports-date-field">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                  <input type="date" id="reports-date-to" />
+                </label>
+              </div>
+
+              <select id="reports-animal-type" class="reports-select" aria-label="Animal type">
+                <option value="all">All Animals</option>
+              </select>
+
+              <select id="reports-test-type" class="reports-select" aria-label="Test type">
+                <option value="all">All Tests</option>
+                <option value="temperature">Temperature</option>
+                <option value="heart">Heart Sound</option>
+                <option value="lung">Lung Sound</option>
+              </select>
+
+              <button type="button" class="reports-btn reports-btn-primary" id="reports-apply-filters">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+                <span>Apply Filters</span>
+              </button>
+              <button type="button" class="reports-btn reports-btn-ghost" id="reports-reset-filters">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Download cards -->
+          <div class="reports-cards-grid">
+            <article class="reports-dl-card reports-dl-card--temp">
+              <div class="reports-dl-card-top">
+                <div class="reports-dl-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h3>Temperature Data</h3>
+                  <p>All temperature readings</p>
+                </div>
+              </div>
+              <div class="reports-dl-meta">
+                <span class="reports-dl-range" data-card-range>15 Jul 2026</span>
+                <span class="reports-dl-badge" id="reports-temp-count">— Records</span>
+              </div>
+              <div class="reports-format-fixed reports-format-fixed--temp">
+                <span class="reports-format-label">Format</span>
+                <span class="reports-format-pill">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Excel
+                </span>
+              </div>
+              <button type="button" class="reports-download-btn reports-download-btn--temp" data-download="temperature">Download</button>
+            </article>
+
+            <article class="reports-dl-card reports-dl-card--heart">
+              <div class="reports-dl-card-top">
+                <div class="reports-dl-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h3>Heart Sound Data</h3>
+                  <p>Heart sound audio files</p>
+                </div>
+              </div>
+              <div class="reports-dl-meta">
+                <span class="reports-dl-range" data-card-range>15 Jul 2026</span>
+                <span class="reports-dl-badge" id="reports-heart-count">— Files</span>
+              </div>
+              <div class="reports-format-fixed reports-format-fixed--heart">
+                <span class="reports-format-label">Format</span>
+                <span class="reports-format-pill">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+                  ZIP
+                </span>
+              </div>
+              <button type="button" class="reports-download-btn reports-download-btn--heart" data-download="heart">Download</button>
+            </article>
+
+            <article class="reports-dl-card reports-dl-card--lung">
+              <div class="reports-dl-card-top">
+                <div class="reports-dl-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M6 12c0-4 2-7 3-8 2 3 2 6 2 8"></path>
+                    <path d="M18 12c0-4-2-7-3-8-2 3-2 6-2 8"></path>
+                    <path d="M9 12v7a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M12 6v6"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h3>Lung Sound Data</h3>
+                  <p>Lung sound audio files</p>
+                </div>
+              </div>
+              <div class="reports-dl-meta">
+                <span class="reports-dl-range" data-card-range>15 Jul 2026</span>
+                <span class="reports-dl-badge" id="reports-lung-count">— Files</span>
+              </div>
+              <div class="reports-format-fixed reports-format-fixed--lung">
+                <span class="reports-format-label">Format</span>
+                <span class="reports-format-pill">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+                  ZIP
+                </span>
+              </div>
+              <button type="button" class="reports-download-btn reports-download-btn--lung" data-download="lung">Download</button>
+            </article>
+          </div>
+
+          <!-- Complete export banner -->
+          <div class="reports-complete-banner">
+            <div class="reports-complete-copy">
+              <div class="reports-complete-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+              </div>
+              <div>
+                <h3>Complete Data Export</h3>
+                <p>Download all data (Temperature, Heart Sound, Lung Sound and Metadata) in a single ZIP file.</p>
+              </div>
+            </div>
+            <button type="button" class="reports-complete-btn" id="reports-download-complete">Download Complete ZIP</button>
+          </div>
+
+          <!-- Download history -->
+          <article class="reports-history-card">
+            <h3 class="reports-history-title">Download History</h3>
+            <div class="reports-history-scroller">
+              <table class="reports-history-table">
+                <thead>
+                  <tr>
+                    <th>Date &amp; Time</th>
+                    <th>Report Type</th>
+                    <th>Date Range</th>
+                    <th>Records / Files</th>
+                    <th>Format</th>
+                    <th>Size</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="reports-history-body">
+                  <tr>
+                    <td colspan="7" class="empty-state">No downloads yet. Generated reports will appear here.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <p class="reports-status" id="reports-status" hidden></p>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- SCRIPTS -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="config.api.js?v=10"></script>
+  <script src="api-client.js?v=10"></script>
+  <script src="auth.js?v=10"></script>
+  <script src="api-adapter.js?v=9"></script>
+  <script src="app-filters.js?v=7"></script>
+  <script src="excel-generator.js?v=10"></script>
+  <script src="dashboard-home.js?v=3"></script>
+  <script src="live-api.js?v=26"></script>
+  <script src="app-pages.js?v=6"></script>
+  <script src="reports-page.js?v=5"></script>
+  <script src="login-fx.js?v=8"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./service-worker.js").catch((error) => {
+          console.error("Service worker registration failed:", error);
+        });
+      });
+    }
+    // Setup dispatcher to start boot
+    window.dispatchEvent(new Event("dashboard:ready"));
+    if (window.VetAuth?.isLoggedIn()) {
+      window.VetLiveApi?.bootstrapIfLoggedIn?.();
+    } else {
+      window.VetAuth?.showLogin?.();
+    }
+  </script>
+</body>
+</html>
