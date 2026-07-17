@@ -87,6 +87,62 @@
     });
   }
 
+  /* ---- progress bar helpers ---- */
+
+  let _progressActive = false;
+
+  function progressShow(label, pct) {
+    const block = document.getElementById("reports-progress-block");
+    const labelEl = document.getElementById("reports-progress-label");
+    const pctEl = document.getElementById("reports-progress-pct");
+    const fill = document.getElementById("reports-progress-fill");
+    const log = document.getElementById("reports-progress-log");
+    if (!block) return;
+    _progressActive = true;
+    block.hidden = false;
+    if (labelEl) labelEl.textContent = label || "Working…";
+    const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
+    if (pctEl) pctEl.textContent = `${clamped}%`;
+    if (fill) fill.style.width = `${clamped}%`;
+    if (log && pct === 0) log.innerHTML = "";
+  }
+
+  function progressUpdate(label, pct) {
+    if (!_progressActive) progressShow(label, pct);
+    const labelEl = document.getElementById("reports-progress-label");
+    const pctEl = document.getElementById("reports-progress-pct");
+    const fill = document.getElementById("reports-progress-fill");
+    if (labelEl) labelEl.textContent = label || "Working…";
+    const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
+    if (pctEl) pctEl.textContent = `${clamped}%`;
+    if (fill) fill.style.width = `${clamped}%`;
+  }
+
+  function progressLog(msg, kind) {
+    const log = document.getElementById("reports-progress-log");
+    if (!log) return;
+    const line = document.createElement("div");
+    line.className = "reports-progress-log-line" + (kind === "done" ? " is-done" : kind === "error" ? " is-error" : "");
+    line.textContent = msg;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function progressDone(msg, isError) {
+    progressUpdate(msg || "Done", 100);
+    if (isError) {
+      const fill = document.getElementById("reports-progress-fill");
+      if (fill) fill.style.background = "#dc2626";
+    }
+    _progressActive = false;
+    setTimeout(() => {
+      const block = document.getElementById("reports-progress-block");
+      if (block) block.hidden = true;
+      const fill = document.getElementById("reports-progress-fill");
+      if (fill) fill.style.background = "";
+    }, isError ? 4000 : 2500);
+  }
+
   function setStatus(msg, isError) {
     const el = document.getElementById("reports-status");
     if (!el) return;
@@ -208,17 +264,32 @@
     if (heartBadge) heartBadge.textContent = "… Files";
     if (lungBadge) lungBadge.textContent = "… Files";
 
+    progressShow("Scanning data…", 0);
+    progressLog(`Date range: ${formatDisplay(from)}${from !== to ? " – " + formatDisplay(to) : ""}`);
+
     try {
       if (!global.VetExcelGenerator?.countReportInventory) {
         throw new Error("Report counter unavailable.");
       }
+
+      progressUpdate("Fetching animal list…", 10);
+      progressLog("Loading animals for selected device…");
+
+      const logger = {
+        log: (msg) => progressLog(msg),
+        warn: (msg) => progressLog(msg),
+        error: () => {},
+      };
+
       const counts = await global.VetExcelGenerator.countReportInventory({
         from,
         to,
         animalType: state.animalType,
         testType: state.testType,
         deviceId: currentDeviceId(),
-      });
+      }, logger, (pct, label) => progressUpdate(label || "Scanning…", 10 + pct * 0.85));
+
+      progressUpdate("Done scanning", 100);
 
       const showTemp = state.testType === "all" || state.testType === "temperature";
       const showHeart = state.testType === "all" || state.testType === "heart";
@@ -227,10 +298,18 @@
       if (tempBadge) tempBadge.textContent = showTemp ? formatCountBadge("temperature", counts.temperature) : "— Records";
       if (heartBadge) heartBadge.textContent = showHeart ? formatCountBadge("heart", counts.heart) : "— Files";
       if (lungBadge) lungBadge.textContent = showLung ? formatCountBadge("lung", counts.lung) : "— Files";
-    } catch {
+
+      progressLog(
+        `Found: ${counts.temperature} temperature · ${counts.heart} heart · ${counts.lung} lung`,
+        "done"
+      );
+      progressDone(`Scan complete · ${counts.pets} animal(s) in range`);
+    } catch (err) {
       if (tempBadge) tempBadge.textContent = "— Records";
       if (heartBadge) heartBadge.textContent = "— Files";
       if (lungBadge) lungBadge.textContent = "— Files";
+      progressLog(err.message || String(err), "error");
+      progressDone("Scan failed", true);
     }
   }
 
@@ -259,7 +338,6 @@
   }
 
   async function downloadTemperature() {
-    setStatus("Preparing temperature Excel download…");
     const from = state.from || todayIso();
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
@@ -267,13 +345,6 @@
     if (!global.VetExcelGenerator?.compileDailySummary) {
       throw new Error("Excel report generator unavailable.");
     }
-
-    const logger = {
-      log: () => {},
-      warn: () => {},
-      error: console.error,
-      success: () => {},
-    };
 
     const days =
       global.VetExcelGenerator.enumerateDays?.(from, to) ||
@@ -288,14 +359,33 @@
         return out;
       })();
 
+    progressShow(`Preparing Excel for ${days.length} day(s)…`, 0);
+    progressLog(`Range: ${rangeLabel()} · ${days.length} day(s)`);
+
     let totalRows = 0;
-    for (const day of days) {
-      setStatus(`Generating temperature Excel for ${formatDisplay(day)}…`);
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i];
+      const pct = Math.round(((i) / days.length) * 90);
+      progressUpdate(`Building Excel — ${formatDisplay(day)} (${i + 1}/${days.length})`, pct);
+      progressLog(`Fetching data for ${formatDisplay(day)}…`);
+
+      const logger = {
+        log: (msg) => progressLog(msg),
+        warn: (msg) => progressLog(msg),
+        error: console.error,
+        success: (msg) => progressLog(msg, "done"),
+      };
+
       const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), logger, {
         animalType: state.animalType,
       });
-      totalRows += Number(result?.rows_written) || 0;
+      const rows = Number(result?.rows_written) || 0;
+      totalRows += rows;
+      progressLog(`${formatDisplay(day)}: ${rows} row(s) written`, "done");
     }
+
+    progressUpdate("Saving Excel file…", 96);
+    progressLog("Triggering file download…", "done");
 
     pushHistory({
       when: new Date().toLocaleString("en-IN", { hour12: true }),
@@ -306,6 +396,7 @@
       size: "—",
       actionHtml: '<span class="reports-hist-done">Downloaded</span>',
     });
+    progressDone(`Excel downloaded · ${totalRows} row(s) · ${rangeLabel()}`);
     setStatus(`Temperature Excel downloaded · ${totalRows} row${totalRows === 1 ? "" : "s"} · ${rangeLabel()}`);
   }
 
@@ -327,50 +418,62 @@
   }
 
   async function downloadComplete() {
-    setStatus("Preparing complete export…");
     const from = state.from || todayIso();
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
 
-    if (global.VetExcelGenerator?.compileDailySummary) {
-      const days =
-        global.VetExcelGenerator.enumerateDays?.(from, to) ||
-        (() => {
-          const out = [];
-          let cursor = from;
-          while (cursor <= to) {
-            out.push(cursor);
-            if (cursor === to) break;
-            cursor = addDaysIso(cursor, 1);
-          }
-          return out;
-        })();
-
-      let totalRows = 0;
-      for (const day of days) {
-        setStatus(`Exporting temperature data for ${formatDisplay(day)}…`);
-        const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), {
-          log() {},
-          warn() {},
-          error: console.error,
-          success() {},
-        }, { animalType: state.animalType });
-        totalRows += Number(result?.rows_written) || 0;
-      }
-
-      pushHistory({
-        when: new Date().toLocaleString("en-IN", { hour12: true }),
-        type: "Complete Data Export",
-        range: rangeLabel(),
-        records: `${totalRows} temperature row${totalRows === 1 ? "" : "s"}`,
-        format: "Excel",
-        size: "—",
-        actionHtml: '<span class="reports-hist-done">Downloaded</span>',
-      });
-      setStatus(`Complete export started with ${totalRows} temperature row(s). Full ZIP requires audio batch API.`);
-      return;
+    if (!global.VetExcelGenerator?.compileDailySummary) {
+      throw new Error("Export generator unavailable.");
     }
-    setStatus("Export generator unavailable.", true);
+
+    const days =
+      global.VetExcelGenerator.enumerateDays?.(from, to) ||
+      (() => {
+        const out = [];
+        let cursor = from;
+        while (cursor <= to) {
+          out.push(cursor);
+          if (cursor === to) break;
+          cursor = addDaysIso(cursor, 1);
+        }
+        return out;
+      })();
+
+    progressShow(`Complete export — ${days.length} day(s)…`, 0);
+    progressLog(`Exporting all data for: ${rangeLabel()}`);
+    progressLog("Step 1 of 2 — Temperature Excel");
+
+    let totalRows = 0;
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i];
+      const pct = Math.round((i / days.length) * 70);
+      progressUpdate(`Temperature — ${formatDisplay(day)} (${i + 1}/${days.length})`, pct);
+      progressLog(`Processing ${formatDisplay(day)}…`);
+      const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), {
+        log: (msg) => progressLog(msg),
+        warn: (msg) => progressLog(msg),
+        error: console.error,
+        success: (msg) => progressLog(msg, "done"),
+      }, { animalType: state.animalType });
+      const rows = Number(result?.rows_written) || 0;
+      totalRows += rows;
+      progressLog(`${formatDisplay(day)}: ${rows} row(s)`, "done");
+    }
+
+    progressUpdate("Step 2 — Audio files (pending API)", 80);
+    progressLog("Heart/lung sound ZIP requires device audio batch API — skipped for now.");
+
+    pushHistory({
+      when: new Date().toLocaleString("en-IN", { hour12: true }),
+      type: "Complete Data Export",
+      range: rangeLabel(),
+      records: `${totalRows} temperature row${totalRows === 1 ? "" : "s"}`,
+      format: "Excel",
+      size: "—",
+      actionHtml: '<span class="reports-hist-done">Downloaded</span>',
+    });
+    progressDone(`Export done · ${totalRows} temperature row(s) · audio ZIP pending`);
+    setStatus(`Export complete · ${totalRows} temperature row(s). Audio ZIP requires device API.`);
   }
 
   function bindUi() {
@@ -433,26 +536,35 @@
       btn.addEventListener("click", async () => {
         const kind = btn.getAttribute("data-download");
         btn.disabled = true;
+        const origText = btn.textContent;
+        btn.textContent = "Working…";
+        setStatus("");
         try {
           if (kind === "temperature") await downloadTemperature();
           else if (kind === "heart" || kind === "lung") await downloadAudioKind(kind);
         } catch (err) {
+          progressLog(err.message || String(err), "error");
+          progressDone("Download failed", true);
           setStatus(err.message || String(err), true);
         } finally {
           btn.disabled = false;
+          btn.textContent = origText;
         }
       });
     });
 
     document.getElementById("reports-download-complete")?.addEventListener("click", async () => {
       const btn = document.getElementById("reports-download-complete");
-      if (btn) btn.disabled = true;
+      if (btn) { btn.disabled = true; btn.textContent = "Working…"; }
+      setStatus("");
       try {
         await downloadComplete();
       } catch (err) {
+        progressLog(err.message || String(err), "error");
+        progressDone("Export failed", true);
         setStatus(err.message || String(err), true);
       } finally {
-        if (btn) btn.disabled = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Download Complete ZIP"; }
       }
     });
   }
