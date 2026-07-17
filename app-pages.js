@@ -540,10 +540,6 @@
       navigate(`/animal/${encodeURIComponent(btn.getAttribute("data-pet-id"))}`);
     });
 
-    document.getElementById("cv-box-tested")?.addEventListener("click", () => {
-      navigate("/vitals-today");
-    });
-
     window.addEventListener("vet:dashboard-filters-changed", () => {
       const { name } = parseHash();
       if (name === "vitals-today") renderVitalsTodayPage();

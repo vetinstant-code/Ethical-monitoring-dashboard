@@ -2347,6 +2347,61 @@ body.reports-mode .page-back-btn {
   margin-bottom: var(--space-5);
 }
 
+.cv-row-3--split {
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+}
+
+.cv-card--wide {
+  min-height: 280px;
+}
+  min-height: 280px;
+}
+
+.cv-compare-card {
+  min-height: 420px;
+}
+
+.cv-subtable-title {
+  margin: var(--space-5) 0 var(--space-3);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cv-table-scroll--cases {
+  max-height: 280px;
+}
+
+.cv-table-scroll--compare {
+  max-height: 360px;
+}
+
+.cv-stats-table {
+  max-width: 560px;
+}
+
+.cv-stats-table td:first-child {
+  width: 55%;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.cv-pass-ok {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.cv-pass-fail {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.cv-compare-table th,
+.cv-compare-table td {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 .cv-row-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2588,6 +2643,7 @@ body.reports-mode .page-back-btn {
   }
 
   .cv-row-3,
+  .cv-row-3--split,
   .cv-row-2 {
     grid-template-columns: 1fr;
   }

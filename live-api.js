@@ -206,7 +206,131 @@
     return roundTempC(summary.ref_max);
   }
 
-  function normalizeRecordings(data) {
+  function numSummaryTemp(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return roundTempC(n);
+  }
+
+  function meanOfTemps(values) {
+    const nums = values.filter((n) => n != null);
+    if (!nums.length) return null;
+    return roundTempC(nums.reduce((a, b) => a + b, 0) / nums.length);
+  }
+
+  function metricsFromSummary(summary, refSource) {
+    if (!summary) return null;
+    const t1 = numSummaryTemp(summary.t1);
+    const t2 = numSummaryTemp(summary.t2);
+    const t3 = numSummaryTemp(summary.t3);
+    const triple = [t1, t2, t3].filter((n) => n != null);
+    const reference = refFromSummary(refSource || summary);
+    const mean =
+      numSummaryTemp(summary.mean) ??
+      meanOfTemps([t1, t2, t3]);
+    const max =
+      numSummaryTemp(summary.max) ??
+      (triple.length ? Math.max(...triple) : null);
+    const min = triple.length ? Math.min(...triple) : null;
+    const sd = numSummaryTemp(summary.sd);
+    const range =
+      max != null && min != null ? roundTempC(max - min) : null;
+    const errMean =
+      numSummaryTemp(summary.err_mean) ??
+      (mean != null && reference != null ? roundTempC(Math.abs(mean - reference)) : null);
+    const errMax =
+      numSummaryTemp(summary.err_max) ??
+      (max != null && reference != null ? roundTempC(Math.abs(max - reference)) : null);
+    return { t1, t2, t3, mean, max, sd, range, reference, errMean, errMax };
+  }
+
+  function petSourceRecord(pet, dailyPet) {
+    const petId = String(pet?.pet_id || pet?.id || "").trim();
+    const full = store.pets.find((p) => String(p.pet_id || p.id) === petId);
+    return full || dailyPet || pet || {};
+  }
+
+  function petDisplayId(pet, dailyPet) {
+    const src = petSourceRecord(pet, dailyPet);
+    for (const key of [
+      "rmt_no",
+      "rmt",
+      "id_no",
+      "id_number",
+      "registration_number",
+      "regt",
+      "regt_no",
+      "animal_id",
+      "pet_number",
+    ]) {
+      const v = String(src[key] ?? "").trim();
+      if (v) return v;
+    }
+    return "";
+  }
+
+  function petDisplayName(pet, dailyPet) {
+    const src = petSourceRecord(pet, dailyPet);
+    const name = String(dailyPet?.pet_name || dailyPet?.name || src.pet_name || src.name || "").trim();
+    if (name && !/^RMT\d*$/i.test(name)) return name;
+    return name || "Unknown";
+  }
+
+  function summaryRecordedDateIst(row) {
+    const parsed = parseApiTimestamp(row?.recorded_at || row?.created_at || row?.timestamp);
+    if (!parsed) return null;
+    return istDateFormatter.format(parsed);
+  }
+
+  function sessionIdsForComparison(sessions, summaries, targetDate) {
+    const ids = new Set();
+    (sessions || []).forEach((s) => {
+      const sid = String(s.id || s.exam_session_id || "").trim();
+      if (!sid) return;
+      if (sessionStartedDateIst(s) === targetDate) ids.add(sid);
+    });
+    (summaries || []).forEach((r) => {
+      if (summaryRecordedDateIst(r) !== targetDate) return;
+      const sid = String(r.exam_session_id || r.examSessionId || "").trim();
+      if (sid) ids.add(sid);
+    });
+    return [...ids];
+  }
+
+  function buildComparisonRow(petId, meta, sid, sessionById, summaries) {
+    const irSummary = pickSessionSummary(summaries, sid, true);
+    const rectSummary = pickSessionSummary(summaries, sid, false);
+    const refSource = irSummary || rectSummary;
+    if (!refSource) return null;
+
+    const reference = refFromSummary(refSource);
+    if (reference == null || reference <= 0) return null;
+
+    const primary = irSummary || rectSummary;
+    const metrics = metricsFromSummary(primary, refSource);
+    if (!metrics || metrics.mean == null) return null;
+    if (metrics.errMax == null) return null;
+
+    const s = sessionById[sid];
+    const ts =
+      parseApiTimestamp(s?.started_at || s?.created_at)?.getTime() ||
+      parseApiTimestamp(primary?.recorded_at || primary?.created_at)?.getTime() ||
+      0;
+
+    return {
+      id: petId,
+      name: meta.name,
+      displayId: meta.displayId || "—",
+      species: meta.species,
+      sessionId: sid,
+      examD: metrics.mean,
+      reference,
+      metrics,
+      errMax: metrics.errMax,
+      acceptancePass: metrics.errMax <= 0.2,
+      timestamp: ts,
+    };
+  }
     if (Array.isArray(data)) return data.filter((x) => x && typeof x === "object");
     if (data && typeof data === "object") {
       if (data.heart || data.lung) {
@@ -289,8 +413,13 @@
           "Uncategorized"
       ).trim() ||
       "Uncategorized";
-    const name = dailyPet?.pet_name || dailyPet?.name || full?.pet_name || full?.name || "Unknown";
-    const meta = { species: String(species).trim() || "Uncategorized", name: String(name).trim() || "Unknown" };
+    const name = petDisplayName(pet, dailyPet);
+    const displayId = petDisplayId(pet, dailyPet);
+    const meta = {
+      species: String(species).trim() || "Uncategorized",
+      name: String(name).trim() || "Unknown",
+      displayId: String(displayId).trim(),
+    };
     store.petMeta[petId] = meta;
     return meta;
   }
@@ -409,10 +538,24 @@
       if (gen != null && gen !== syncGeneration) return local;
 
       const sessions = global.VetApiNormalize.normalizeSessions(sessionsResponse);
+      const comparisonIds = sessionIdsForComparison(sessions, summaries, targetDate);
       const dateSessions = sessions.filter((s) => sessionStartedDateIst(s) === targetDate);
-      if (!dateSessions.length) return local;
+      if (!dateSessions.length && !comparisonIds.length) return local;
 
+      const sessionById = {};
+      sessions.forEach((s) => {
+        const sid = String(s.id || s.exam_session_id || "").trim();
+        if (sid) sessionById[sid] = s;
+      });
+
+      comparisonIds.forEach((sid) => {
+        const row = buildComparisonRow(petId, meta, sid, sessionById, summaries);
+        if (row) local.comparisons.push(row);
+      });
+
+      let sessionIndex = 0;
       for (const s of dateSessions) {
+          sessionIndex += 1;
           const sid = s.id || s.exam_session_id;
           const timeStr = sessionTimeIst(s);
           const hour = sessionHourIst(s);
@@ -465,15 +608,6 @@
             statusClass = "low";
           }
 
-          if (tempVal != null && refVal != null) {
-            local.comparisons.push({
-              id: petId,
-              species: meta.species,
-              examD: tempVal,
-              reference: refVal,
-            });
-          }
-
           const testsLabel = tests.size ? [...tests].join(", ") : "—";
           const ts = parseApiTimestamp(s.started_at || s.created_at)?.getTime() || 0;
 
@@ -490,6 +624,7 @@
           local.cases.push({
             time: timeStr || "—",
             name: meta.name,
+            displayId: meta.displayId || "—",
             id: petId,
             species: meta.species,
             tests: testsLabel,
@@ -550,8 +685,20 @@
         hourly: payload.hourly,
         statusCounts: payload.statusCounts,
         completedAllTime: payload.completedAllTime,
-        cases: (payload.cases || []).map((c) => [c.id, c.time, c.species, c.tests, c.statusLabel]),
-        comparisons: (payload.comparisons || []).map((c) => [c.id, c.examD, c.reference]),
+        cases: (payload.cases || []).map((c) => [c.id, c.time, c.name, c.displayId, c.species, c.tests, c.statusLabel]),
+        comparisons: (payload.comparisons || []).map((c) => [
+          c.id,
+          c.name,
+          c.displayId,
+          c.examD,
+          c.reference,
+          c.errMax,
+          c.acceptancePass,
+          c.metrics?.mean,
+          c.metrics?.max,
+          c.metrics?.sd,
+          c.metrics?.errMean,
+        ]),
         notes: payload.notes,
       });
     } catch {
@@ -761,6 +908,12 @@
 
       activities.sort((a, b) => b.timestamp - a.timestamp);
       cases.sort((a, b) => b.timestamp - a.timestamp);
+      comparisons.sort((a, b) => {
+        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+        const byName = (a.name || "").localeCompare(b.name || "");
+        if (byName) return byName;
+        return String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
+      });
 
       const hourly = Object.keys(hourlyMap)
         .map((h) => ({ label: `${String(h).padStart(2, "0")}:00`, count: hourlyMap[h] }))

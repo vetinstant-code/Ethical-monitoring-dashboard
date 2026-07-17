@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=45" />
+  <link rel="stylesheet" href="styles.css?v=46" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -327,54 +327,57 @@
           </article>
         </section>
 
-        <!-- Row 3: distribution + status + summary -->
-        <section class="cv-row-3">
+        <!-- Row 3: distribution + recent cases (replaces status chart + CV summary) -->
+        <section class="cv-row-3 cv-row-3--split">
           <article class="cv-card">
             <h3 class="cv-card-title">Animal Distribution Today</h3>
             <div class="cv-chart-wrap cv-chart-wrap--sm"><canvas id="cv-distribution-chart"></canvas></div>
           </article>
-          <article class="cv-card">
-            <h3 class="cv-card-title">Validation Status Today</h3>
-            <div class="cv-chart-wrap cv-chart-wrap--sm"><canvas id="cv-status-chart"></canvas></div>
-          </article>
-          <article class="cv-card cv-summary-card">
-            <h3 class="cv-card-title">Clinical Validation Summary (Today)</h3>
-            <div class="cv-summary-grid">
-              <div class="cv-summary-box kpi-card-clickable" id="cv-box-tested"><span>Animals Tested</span><strong id="cv-sum-tested">0</strong></div>
-              <div class="cv-summary-box"><span>Successful Cases</span><strong id="cv-sum-success">0</strong></div>
-              <div class="cv-summary-box"><span>Failed Cases</span><strong id="cv-sum-failed">0</strong></div>
-              <div class="cv-summary-box cv-summary-box--rate"><span>Success Rate</span><strong id="cv-sum-rate">0%</strong></div>
+          <article class="cv-card cv-card--wide">
+            <h3 class="cv-card-title">Recent Cases (Today)</h3>
+            <div class="rounds-table-scroller cv-table-scroll cv-table-scroll--cases">
+              <table class="rounds-log-table">
+                <thead><tr><th>Time</th><th>Animal Name</th><th>ID</th><th>Species</th><th>Tests</th><th>Status</th></tr></thead>
+                <tbody id="cv-recent-cases-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+              </table>
             </div>
           </article>
         </section>
 
-        <!-- Row 4: tables -->
-        <section class="cv-row-2">
-          <article class="cv-card">
-            <h3 class="cv-card-title">Recent Cases (Today)</h3>
-            <div class="rounds-table-scroller cv-table-scroll">
-              <table class="rounds-log-table">
-                <thead><tr><th>Time</th><th>Animal</th><th>Species</th><th>Tests</th><th>Status</th></tr></thead>
-                <tbody id="cv-recent-cases-body"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+        <!-- Row 4: full-width reference comparison + validation stats table -->
+        <section class="cv-row-1">
+          <article class="cv-card cv-compare-card">
+            <h3 class="cv-card-title">Reference vs ExamD Comparison (Temperature °C)</h3>
+            <div class="rounds-table-scroller cv-table-scroll cv-table-scroll--compare">
+              <table class="rounds-log-table cv-compare-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Animal Name</th>
+                    <th>ID</th>
+                    <th>Species</th>
+                    <th>ExamD (°C)</th>
+                    <th>Reference (°C)</th>
+                    <th>Mean</th>
+                    <th>Max</th>
+                    <th>SD</th>
+                    <th>Range</th>
+                    <th>Err Mean</th>
+                    <th>Err Max</th>
+                    <th>Acceptance Criteria (±0.2 °C)</th>
+                  </tr>
+                </thead>
+                <tbody id="cv-compare-body"><tr><td colspan="13" class="empty-state">Loading…</td></tr></tbody>
               </table>
             </div>
-          </article>
-          <article class="cv-card">
-            <h3 class="cv-card-title">Reference vs ExamD Comparison (Temperature °C)</h3>
-            <div class="cv-compare-layout">
-              <div class="rounds-table-scroller cv-table-scroll">
-                <table class="rounds-log-table">
-                  <thead><tr><th>Animal ID</th><th>Species</th><th>ExamD (°C)</th><th>Reference (°C)</th><th>Difference (°C)</th></tr></thead>
-                  <tbody id="cv-compare-body"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
-                </table>
-              </div>
-              <aside class="cv-stats-panel">
-                <div class="cv-stat-line"><span>Mean Error</span><strong id="cv-stat-mean">—</strong></div>
-                <div class="cv-stat-line"><span>MAE</span><strong id="cv-stat-mae">—</strong></div>
-                <div class="cv-stat-line"><span>SD</span><strong id="cv-stat-sd">—</strong></div>
-                <div class="cv-stat-line"><span>R²</span><strong id="cv-stat-r2">—</strong></div>
-                <div class="cv-stat-pass"><span>Acceptance Criteria (±0.2 °C)</span><strong id="cv-stat-pass">—</strong></div>
-              </aside>
+            <h4 class="cv-subtable-title">Validation Summary Statistics</h4>
+            <div class="rounds-table-scroller">
+              <table class="rounds-log-table cv-stats-table">
+                <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+                <tbody id="cv-validation-stats-body">
+                  <tr><td colspan="2" class="empty-state">Loading…</td></tr>
+                </tbody>
+              </table>
             </div>
           </article>
         </section>
@@ -692,15 +695,15 @@
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=9"></script>
   <script src="excel-generator.js?v=19"></script>
-  <script src="dashboard-home.js?v=3"></script>
-  <script src="live-api.js?v=29"></script>
-  <script src="app-pages.js?v=9"></script>
+  <script src="dashboard-home.js?v=5"></script>
+  <script src="live-api.js?v=31"></script>
+  <script src="app-pages.js?v=10"></script>
   <script src="reports-page.js?v=18"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=24").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=26").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

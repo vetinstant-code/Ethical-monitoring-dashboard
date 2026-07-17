@@ -175,20 +175,26 @@
     charts["cv-timeline-chart"]._dataKey = key;
   }
 
+  function fmtTemp(v) {
+    if (v == null || !Number.isFinite(v)) return "—";
+    return v.toFixed(2);
+  }
+
   function renderRecentCases(cases) {
     const body = document.getElementById("cv-recent-cases-body");
     if (!body) return;
     if (!cases.length) {
-      body.innerHTML = `<tr><td colspan="5" class="empty-state">No cases recorded on this date.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="empty-state">No cases recorded on this date.</td></tr>`;
       return;
     }
     body.innerHTML = cases
-      .slice(0, 12)
+      .slice(0, 20)
       .map(
         (c) => `
       <tr class="activity-row-clickable" data-pet-id="${escapeHtml(c.id)}" tabindex="0" role="link">
         <td class="time-col-text">${escapeHtml(c.time)}</td>
         <td><span class="animal-name-bold">${escapeHtml(c.name)}</span></td>
+        <td>${escapeHtml(c.displayId || "—")}</td>
         <td>${escapeHtml(c.species)}</td>
         <td class="vitals-text-bold">${escapeHtml(c.tests)}</td>
         <td><span class="badge-status ${c.statusClass}">${escapeHtml(c.statusLabel)}</span></td>
@@ -209,58 +215,105 @@
     });
   }
 
+  function renderValidationStats(rows) {
+    const body = document.getElementById("cv-validation-stats-body");
+    if (!body) return;
+    const valid = rows.filter((r) => r.examD != null && r.reference != null && r.errMax != null);
+    if (!valid.length) {
+      body.innerHTML = `<tr><td colspan="2" class="empty-state">No validation statistics for this date.</td></tr>`;
+      return;
+    }
+
+    const errMaxes = valid.map((r) => r.errMax);
+    const errMeans = valid.map((r) => r.metrics?.errMean).filter((n) => n != null);
+    const examVals = valid.map((r) => r.examD);
+    const refVals = valid.map((r) => r.reference);
+    const diffs = valid.map((r) => r.examD - r.reference);
+    const passRows = valid.filter((r) => r.acceptancePass);
+    const failRows = valid.length - passRows.length;
+    const mae = mean(errMaxes);
+    const sd = stdev(diffs);
+    const r2 = rSquared(examVals, refVals);
+    const overallPass = passRows.length === valid.length;
+
+    const statsRows = [
+      ["Valid comparison sessions", String(valid.length)],
+      ["Sessions PASS (Err Max ≤ 0.2 °C)", String(passRows.length)],
+      ["Sessions FAIL (Err Max > 0.2 °C)", String(failRows.length)],
+      ["Mean Error (ExamD − Reference)", mean(diffs) != null ? `${mean(diffs).toFixed(2)} °C` : "—"],
+      ["MAE (avg Err Max)", mae != null ? `${mae.toFixed(2)} °C` : "—"],
+      ["SD (Standard Deviation)", sd != null ? `${sd.toFixed(2)} °C` : "—"],
+      ["R² (Coefficient of Determination)", r2 != null ? r2.toFixed(2) : "—"],
+      ["Avg Err Mean (from server)", errMeans.length ? `${mean(errMeans).toFixed(2)} °C` : "—"],
+      ["Acceptance Criteria (±0.2 °C)", overallPass ? "PASS" : "FAIL"],
+    ];
+
+    body.innerHTML = statsRows
+      .map(([label, value]) => {
+        const isPassRow = label.startsWith("Acceptance");
+        const valueCls =
+          isPassRow && value === "PASS"
+            ? "cv-pass-ok"
+            : isPassRow && value === "FAIL"
+              ? "cv-pass-fail"
+              : "";
+        return `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td class="vitals-text-bold ${valueCls}">${escapeHtml(value)}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+
   function renderCompareTable(rows) {
     const body = document.getElementById("cv-compare-body");
     if (!body) return;
-    const valid = rows.filter((r) => r.examD != null && r.reference != null);
+    const valid = rows.filter((r) => r.examD != null && r.reference != null && r.errMax != null);
     if (!valid.length) {
-      body.innerHTML = `<tr><td colspan="5" class="empty-state">No reference comparison data for this date.</td></tr>`;
-      document.getElementById("cv-stat-mean").textContent = "—";
-      document.getElementById("cv-stat-mae").textContent = "—";
-      document.getElementById("cv-stat-sd").textContent = "—";
-      document.getElementById("cv-stat-r2").textContent = "—";
-      const passEl = document.getElementById("cv-stat-pass");
-      if (passEl) {
-        passEl.textContent = "—";
-        passEl.className = "";
-      }
+      body.innerHTML = `<tr><td colspan="13" class="empty-state">No reference comparison data for this date.</td></tr>`;
+      renderValidationStats([]);
       return;
     }
 
     body.innerHTML = valid
-      .map((r) => {
-        const diff = r.examD - r.reference;
-        const diffCls = diff <= 0 ? "cv-diff-neg" : "cv-diff-pos";
+      .map((r, idx) => {
+        const m = r.metrics || {};
+        const pass = r.acceptancePass === true;
+        const passLabel = pass ? "PASS" : "FAIL";
+        const passCls = pass ? "cv-pass-ok" : "cv-pass-fail";
         return `
-        <tr>
-          <td class="animal-id-sub">${escapeHtml(String(r.id).slice(0, 10))}</td>
+        <tr class="activity-row-clickable" data-pet-id="${escapeHtml(r.id)}" tabindex="0" role="link">
+          <td>${idx + 1}</td>
+          <td><span class="animal-name-bold">${escapeHtml(r.name || "—")}</span></td>
+          <td>${escapeHtml(r.displayId || "—")}</td>
           <td>${escapeHtml(r.species)}</td>
-          <td>${r.examD.toFixed(2)}</td>
-          <td>${r.reference.toFixed(2)}</td>
-          <td class="${diffCls}">${diff >= 0 ? "+" : ""}${diff.toFixed(2)}</td>
+          <td class="vitals-text-bold">${fmtTemp(r.examD)}</td>
+          <td>${fmtTemp(r.reference)}</td>
+          <td>${fmtTemp(m.mean)}</td>
+          <td>${fmtTemp(m.max)}</td>
+          <td>${fmtTemp(m.sd)}</td>
+          <td>${fmtTemp(m.range)}</td>
+          <td>${fmtTemp(m.errMean)}</td>
+          <td class="vitals-text-bold ${pass ? "cv-pass-ok" : "cv-pass-fail"}">${fmtTemp(r.errMax)}</td>
+          <td class="vitals-text-bold ${passCls}">${passLabel}</td>
         </tr>`;
       })
       .join("");
 
-    const diffs = valid.map((r) => r.examD - r.reference);
-    const absDiffs = diffs.map((d) => Math.abs(d));
-    const mae = mean(absDiffs);
-    const sd = stdev(diffs);
-    const r2 = rSquared(
-      valid.map((r) => r.examD),
-      valid.map((r) => r.reference)
-    );
-    const pass = mae != null && mae <= 0.2;
+    body.querySelectorAll("tr[data-pet-id]").forEach((row) => {
+      row.addEventListener("click", () => {
+        global.VetAppPages?.openAnimalHistory?.(row.getAttribute("data-pet-id"));
+      });
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          global.VetAppPages?.openAnimalHistory?.(row.getAttribute("data-pet-id"));
+        }
+      });
+    });
 
-    document.getElementById("cv-stat-mean").textContent = `${mean(diffs).toFixed(2)} °C`;
-    document.getElementById("cv-stat-mae").textContent = `${mae.toFixed(2)} °C`;
-    document.getElementById("cv-stat-sd").textContent = `${sd.toFixed(2)} °C`;
-    document.getElementById("cv-stat-r2").textContent = r2 != null ? r2.toFixed(2) : "—";
-    const passEl = document.getElementById("cv-stat-pass");
-    if (passEl) {
-      passEl.textContent = pass ? "PASS" : "FAIL";
-      passEl.className = pass ? "cv-pass-ok" : "cv-pass-fail";
-    }
+    renderValidationStats(valid);
   }
 
   function renderNotes(notes, dateLabel) {
@@ -333,22 +386,6 @@
     const distValues = Object.values(speciesCounts);
     const distColors = distLabels.map((l) => speciesStyle(l).color);
     renderDonut("cv-distribution-chart", distLabels, distValues, distColors);
-
-    renderDonut(
-      "cv-status-chart",
-      ["Completed", "In Progress", "Failed"],
-      [statusCounts.completed || 0, statusCounts.inProgress || 0, statusCounts.failed || 0],
-      ["#22c55e", "#f59e0b", "#ef4444"]
-    );
-
-    const success = statusCounts.completed || 0;
-    const failed = statusCounts.failed || 0;
-    const tested = totalToday;
-    const rate = tested > 0 ? ((success / tested) * 100).toFixed(1) : "0.0";
-    document.getElementById("cv-sum-tested").textContent = String(tested);
-    document.getElementById("cv-sum-success").textContent = String(success);
-    document.getElementById("cv-sum-failed").textContent = String(failed);
-    document.getElementById("cv-sum-rate").textContent = `${rate}%`;
 
     renderRecentCases(cases);
     renderCompareTable(comparisons);
