@@ -39,6 +39,30 @@
     return letter;
   }
 
+  function _positiveFloat(value) {
+    const n = parseFloat(value);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /** Map summary IR fields into [ambient, forehead, body] for t1/t2/t3. */
+  function tBlocksFromSummary(irSummary) {
+    const blocks = {
+      t1: [0.0, 0.0, 0.0],
+      t2: [0.0, 0.0, 0.0],
+      t3: [0.0, 0.0, 0.0],
+    };
+    if (!irSummary || typeof irSummary !== "object") return blocks;
+    ["t1", "t2", "t3"].forEach((key) => {
+      const ambient = _positiveFloat(irSummary[`${key}_ambient`] ?? irSummary[`${key}_amb`]);
+      const forehead = _positiveFloat(irSummary[`${key}_forehead`] ?? irSummary[`${key}_tf`]);
+      const body = _positiveFloat(irSummary[key]);
+      if (ambient != null) blocks[key][0] = ambient;
+      if (forehead != null) blocks[key][1] = forehead;
+      if (body != null) blocks[key][2] = body;
+    });
+    return blocks;
+  }
+
   function _finiteNums(values) {
     return values.map((v) => Number(v)).filter((n) => Number.isFinite(n));
   }
@@ -1693,12 +1717,7 @@
             t3: [0.0, 0.0, 0.0],
           };
           if (irSummary) {
-            const t1 = parseFloat(irSummary.t1);
-            const t2 = parseFloat(irSummary.t2);
-            const t3 = parseFloat(irSummary.t3);
-            if (!isNaN(t1) && t1 > 0) chosenTBlocks.t1[2] = t1;
-            if (!isNaN(t2) && t2 > 0) chosenTBlocks.t2[2] = t2;
-            if (!isNaN(t3) && t3 > 0) chosenTBlocks.t3[2] = t3;
+            chosenTBlocks = tBlocksFromSummary(irSummary);
           }
 
           // Fetch notes
@@ -2119,17 +2138,29 @@
 
     logger.log("Generating report binary stream...");
     const outputBuffer = await wb.xlsx.writeBuffer();
-    const outputBlob = new Blob([outputBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    });
-
     const fileDate = selectedDate.replace(/-/g, "");
     const runStamp = new Date().toTimeString().slice(0, 8).replace(/:/g, "-");
     const filename = `oneday_summary_${fileDate}_${runStamp}.xlsx`;
 
+    if (!writtenRows) {
+      logger.log(`No data rows for ${selectedDate} — skipping empty Excel file.`);
+      return {
+        rows_written: 0,
+        skipped: skippedCount,
+        notes: notesCount,
+        pet_count: pets.length,
+        buffer: null,
+        filename: null,
+        skipped_empty: true,
+      };
+    }
+
     logger.log(`Compilation successful! Triggering client download for '${filename}'...`);
 
     if (options.download !== false) {
+      const outputBlob = new Blob([outputBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(outputBlob);
       link.download = filename;
