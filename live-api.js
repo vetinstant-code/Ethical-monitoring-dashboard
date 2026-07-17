@@ -4,7 +4,6 @@
  * Uses parallel fetches + progress percent for faster perceived load.
  */
 (function (global) {
-  const ALLOWED_DEVICE = "ARMY";
   const CONCURRENCY = 6;
   const REF_TEMPS_F = {
     GIZMO: 101.9,
@@ -294,7 +293,7 @@
     const session = global.VetAuth?.getSession() || {};
     const cfg = {
       baseUrl: global.API_CONFIG?.baseUrl || "https://wick-vehicular-dingy.ngrok-free.dev",
-      deviceId: session.deviceId || ALLOWED_DEVICE,
+      deviceId: session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY",
       timeoutMs: global.API_CONFIG?.timeoutMs || 25000,
     };
     const client = new global.VetApiClient(cfg);
@@ -721,7 +720,7 @@
       } else if (dailyPetsList.length) {
         notes.push("Reference thermometer readings not yet available for all sessions today.");
       } else if (resolved.source === "none") {
-        notes.push(`No exam sessions found on ${istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`))}. Try Jul 2 or Jul 3 for recent ARMY data.`);
+        notes.push(`No exam sessions found on ${istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`))}. Try another date with recorded sessions for the selected device.`);
       } else {
         notes.push("Reference thermometer readings not yet available for all sessions today.");
       }

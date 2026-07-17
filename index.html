@@ -32,7 +32,7 @@
         </div>
         <div class="login-brand-copy">
           <h2>Ethical Committee Dashboard</h2>
-          <p>Sign in with the ARMY device credentials to review vitals, rounds activity, and generate accuracy reports.</p>
+          <p>Sign in with your device credentials to review vitals, rounds activity, and generate accuracy reports.</p>
         </div>
       </aside>
 
@@ -54,19 +54,21 @@
 
         <div class="login-card">
           <h2 class="login-card-title">Sign in</h2>
-          <p class="login-card-sub">Use your ARMY device account to continue.</p>
+          <p class="login-card-sub">Use one of the approved device accounts to continue.</p>
 
           <form id="login-form" class="login-form" autocomplete="on">
             <div class="form-input-group">
               <label for="login-device">Device ID</label>
-              <input
-                type="text"
+              <select
                 id="login-device"
                 class="form-field-input"
-                value="ARMY"
-                readonly
-                aria-readonly="true"
-              />
+                aria-label="Device ID"
+              >
+                <option value="ARMY">ARMY</option>
+                <option value="BRUNO">BRUNO</option>
+                <option value="ARCHIT">ARCHIT</option>
+                <option value="ZARA">ZARA</option>
+              </select>
             </div>
 
             <div class="form-input-group">
@@ -639,16 +641,16 @@
   <!-- SCRIPTS -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-  <script src="config.api.js?v=10"></script>
+  <script src="config.api.js?v=11"></script>
   <script src="api-client.js?v=10"></script>
-  <script src="auth.js?v=10"></script>
+  <script src="auth.js?v=11"></script>
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=7"></script>
-  <script src="excel-generator.js?v=10"></script>
+  <script src="excel-generator.js?v=11"></script>
   <script src="dashboard-home.js?v=3"></script>
-  <script src="live-api.js?v=26"></script>
-  <script src="app-pages.js?v=6"></script>
-  <script src="reports-page.js?v=5"></script>
+  <script src="live-api.js?v=27"></script>
+  <script src="app-pages.js?v=7"></script>
+  <script src="reports-page.js?v=6"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {

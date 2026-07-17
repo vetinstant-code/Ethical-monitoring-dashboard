@@ -1,12 +1,29 @@
 /**
- * ARMY device login gate — dashboard after sign-in.
+ * Multi-device login gate — dashboard after sign-in.
  */
 (function (global) {
   const SESSION_KEY = "vet_auth_session";
-  const ALLOWED_DEVICE = "ARMY";
+  const DEFAULT_ALLOWED_DEVICES = ["ARMY", "BRUNO", "ARCHIT", "ZARA"];
 
   function $(id) {
     return document.getElementById(id);
+  }
+
+  function getAllowedDevices() {
+    const configured = global.API_CONFIG?.allowedDevices;
+    const list = Array.isArray(configured) && configured.length ? configured : DEFAULT_ALLOWED_DEVICES;
+    return [...new Set(list.map((v) => String(v || "").trim().toUpperCase()).filter(Boolean))];
+  }
+
+  function defaultDeviceId() {
+    const configured = String(global.API_CONFIG?.deviceId || "").trim().toUpperCase();
+    const allowed = getAllowedDevices();
+    if (configured && allowed.includes(configured)) return configured;
+    return allowed[0] || "ARMY";
+  }
+
+  function currentDeviceId() {
+    return getSession()?.deviceId || defaultDeviceId();
   }
 
   function getSession() {
@@ -14,7 +31,9 @@
       const raw = sessionStorage.getItem(SESSION_KEY);
       if (!raw) return null;
       const s = JSON.parse(raw);
-      if (s.deviceId !== ALLOWED_DEVICE || !s.password) return null;
+      const deviceId = String(s.deviceId || "").trim().toUpperCase();
+      if (!getAllowedDevices().includes(deviceId) || !s.password) return null;
+      s.deviceId = deviceId;
       return s;
     } catch {
       return null;
@@ -59,16 +78,28 @@
     $("app-root")?.removeAttribute("hidden");
   }
 
-  function applyHorseOnlyMode(resetKpiCounts) {
-    document.body.classList.add("device-army", "species-horse-only");
+  function populateDeviceOptions() {
+    const field = $("login-device");
+    if (!field) return;
+    const allowed = getAllowedDevices();
+    const selected = currentDeviceId();
+    field.innerHTML = allowed
+      .map((deviceId) => `<option value="${deviceId}">${deviceId}</option>`)
+      .join("");
+    field.value = allowed.includes(selected) ? selected : allowed[0] || "";
+  }
+
+  function applyDeviceMode(resetKpiCounts, deviceId = currentDeviceId()) {
+    document.body.classList.remove("device-army", "device-bruno", "device-archit", "device-zara");
+    document.body.classList.add(`device-${String(deviceId || "").toLowerCase()}`, "species-horse-only");
     document.title = "VetInstant — Animal Health Intelligence";
 
     if (global.API_CONFIG) {
-      global.API_CONFIG.deviceId = ALLOWED_DEVICE;
+      global.API_CONFIG.deviceId = deviceId;
     }
 
     const deviceField = $("excel-device-id");
-    if (deviceField) deviceField.value = ALLOWED_DEVICE;
+    if (deviceField) deviceField.value = deviceId;
 
     if (resetKpiCounts) {
       ["kpi-total-animals", "kpi-vitals-today"].forEach((id) => {
@@ -79,7 +110,7 @@
   }
 
   function onDashboardReady() {
-    applyHorseOnlyMode(false);
+    applyDeviceMode(false);
     if (global.VetLiveApi?.bootstrapIfLoggedIn) {
       global.VetLiveApi.bootstrapIfLoggedIn();
     }
@@ -87,21 +118,21 @@
 
   async function handleLogin(event) {
     event.preventDefault();
-    const deviceId = ($("login-device")?.value || ALLOWED_DEVICE).trim().toUpperCase();
+    const deviceId = ($("login-device")?.value || defaultDeviceId()).trim().toUpperCase();
     const password = ($("login-password")?.value || "").trim();
     const submit = $("login-submit");
     const err = $("login-error");
 
-    if (deviceId !== ALLOWED_DEVICE) {
+    if (!getAllowedDevices().includes(deviceId)) {
       if (err) {
-        err.textContent = "Only ARMY device login is allowed.";
+        err.textContent = `Allowed devices: ${getAllowedDevices().join(", ")}.`;
         err.hidden = false;
       }
       return;
     }
     if (!password) {
       if (err) {
-        err.textContent = "Enter the ARMY device password.";
+        err.textContent = `Enter the ${deviceId} device password.`;
         err.hidden = false;
       }
       return;
@@ -123,7 +154,7 @@
       global.__vetApiClient = client;
 
       showApp();
-      applyHorseOnlyMode(true);
+      applyDeviceMode(true, deviceId);
       onDashboardReady();
     } catch (e) {
       if (err) {
@@ -148,6 +179,7 @@
   }
 
   function init() {
+    populateDeviceOptions();
     $("login-form")?.addEventListener("submit", handleLogin);
     $("logout-btn")?.addEventListener("click", handleLogout);
 
@@ -157,7 +189,7 @@
 
     if (isLoggedIn()) {
       showApp();
-      applyHorseOnlyMode(false);
+      applyDeviceMode(false);
       if (global.VetLiveApi?.bootstrapIfLoggedIn) {
         global.VetLiveApi.bootstrapIfLoggedIn();
       }
@@ -175,9 +207,10 @@
   global.VetAuth = {
     isLoggedIn,
     getSession,
-    getDeviceId: () => ALLOWED_DEVICE,
+    getDeviceId: currentDeviceId,
+    getAllowedDevices,
     onDashboardReady,
-    applyHorseOnlyMode,
+    applyDeviceMode,
     showLogin,
     logout: handleLogout,
   };

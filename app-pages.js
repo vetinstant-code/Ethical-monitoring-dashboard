@@ -138,7 +138,7 @@
     const session = global.VetAuth?.getSession?.() || {};
     const cfg = {
       baseUrl: global.API_CONFIG?.baseUrl,
-      deviceId: session.deviceId || "ARMY",
+      deviceId: session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY",
       timeoutMs: global.API_CONFIG?.timeoutMs || 25000,
     };
     const client = new global.VetApiClient(cfg);

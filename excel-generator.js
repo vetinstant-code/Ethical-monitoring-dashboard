@@ -713,7 +713,7 @@
     const session = global.VetAuth?.getSession?.() || {};
     const cfg = {
       baseUrl: global.API_CONFIG.baseUrl,
-      deviceId: deviceId || session.deviceId || "ARMY",
+      deviceId: deviceId || session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY",
       timeoutMs: 25000,
     };
     const client = new global.VetApiClient(cfg);
@@ -1541,7 +1541,7 @@
     if (btn) {
       btn.addEventListener("click", async () => {
         const selectedDate = getReportDate();
-        const deviceId = deviceInput?.value || "ARMY";
+        const deviceId = deviceInput?.value || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY";
 
         btn.disabled = true;
         setReportResult("is-loading", "Generating report…", "");

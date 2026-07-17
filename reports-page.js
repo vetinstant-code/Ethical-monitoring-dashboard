@@ -19,6 +19,10 @@
     year: "numeric",
   });
 
+  function currentDeviceId() {
+    return global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY";
+  }
+
   function todayIso() {
     return global.VetLiveApi?.todayIsoIst?.() || new Date().toISOString().slice(0, 10);
   }
@@ -213,7 +217,7 @@
         to,
         animalType: state.animalType,
         testType: state.testType,
-        deviceId: "ARMY",
+        deviceId: currentDeviceId(),
       });
 
       const showTemp = state.testType === "all" || state.testType === "temperature";
@@ -287,7 +291,7 @@
     let totalRows = 0;
     for (const day of days) {
       setStatus(`Generating temperature Excel for ${formatDisplay(day)}…`);
-      const result = await global.VetExcelGenerator.compileDailySummary(day, "ARMY", logger, {
+      const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), logger, {
         animalType: state.animalType,
       });
       totalRows += Number(result?.rows_written) || 0;
@@ -345,7 +349,7 @@
       let totalRows = 0;
       for (const day of days) {
         setStatus(`Exporting temperature data for ${formatDisplay(day)}…`);
-        const result = await global.VetExcelGenerator.compileDailySummary(day, "ARMY", {
+        const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), {
           log() {},
           warn() {},
           error: console.error,
