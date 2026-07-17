@@ -7,7 +7,7 @@
     constructor(config) {
       const c = config || global.API_CONFIG || {};
       this.baseUrl = String(c.baseUrl || "").replace(/\/$/, "");
-      this.deviceId = String(c.deviceId || "").trim();
+      this.deviceId = String(c.deviceId || "").trim().toUpperCase();
       this.timeoutMs = Number(c.timeoutMs) || 25000;
       if (!this.baseUrl) throw new Error("API baseUrl is required (config.api.js).");
     }
@@ -72,7 +72,7 @@
     }
 
     setDeviceId(deviceId) {
-      const clean = String(deviceId || "").trim();
+      const clean = String(deviceId || "").trim().toUpperCase();
       if (!clean) throw new Error("Device ID cannot be empty.");
       this.deviceId = clean;
     }

@@ -4,7 +4,7 @@
  * Uses parallel fetches + progress percent for faster perceived load.
  */
 (function (global) {
-  const CONCURRENCY = 6;
+  const CONCURRENCY = 10;
   const REF_TEMPS_F = {
     GIZMO: 101.9,
     AVANI: 100.5,
@@ -24,6 +24,7 @@
     loading: false,
     error: null,
     apiClient: null,
+    deviceId: null,
     pets: [],
     petMeta: {},
     lastFingerprint: null,
@@ -33,6 +34,7 @@
   let syncGeneration = 0;
   let pendingRefresh = false;
   let pendingForce = false;
+  let bootstrapTimer = null;
 
   const istDateFormatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
@@ -234,9 +236,14 @@
     };
   }
 
-  async function resolvePetsForDate(client, targetDate, allPets) {
-    const dailyResponse = await client.dailyPets(targetDate).catch(() => null);
-    let list = (dailyResponse?.pets || []).map(dailyPetRowFrom);
+  async function resolvePetsForDate(client, targetDate, allPets, preFetchedDaily = undefined) {
+    let list = [];
+    if (preFetchedDaily !== undefined) {
+      list = (preFetchedDaily?.pets || []).map(dailyPetRowFrom);
+    } else {
+      const dailyResponse = await client.dailyPets(targetDate).catch(() => null);
+      list = (dailyResponse?.pets || []).map(dailyPetRowFrom);
+    }
     if (list.length) return { list, source: "daily-pets" };
 
     const registered = (allPets || []).map(dailyPetRowFrom).filter((p) => p.pet_id || p.id);
@@ -288,19 +295,57 @@
     return meta;
   }
 
+  function expectedDeviceId() {
+    const session = global.VetAuth?.getSession?.() || {};
+    return String(
+      session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || ""
+    )
+      .trim()
+      .toUpperCase();
+  }
+
+  function clientMatchesDevice(client, deviceId = expectedDeviceId()) {
+    if (!client || !deviceId) return false;
+    return String(client.deviceId || "")
+      .trim()
+      .toUpperCase() === deviceId;
+  }
+
+  function setApiClient(client) {
+    if (!client) {
+      store.apiClient = null;
+      return;
+    }
+    store.apiClient = client;
+    store.deviceId = String(client.deviceId || "").trim().toUpperCase() || null;
+  }
+
   async function ensureClient() {
-    if (store.apiClient) return store.apiClient;
-    const session = global.VetAuth?.getSession() || {};
+    const session = global.VetAuth?.getSession?.() || {};
+    const wantedDeviceId = expectedDeviceId();
+    if (!wantedDeviceId || !session.password) {
+      throw new Error("Not signed in.");
+    }
+
+    if (store.apiClient && clientMatchesDevice(store.apiClient, wantedDeviceId)) {
+      return store.apiClient;
+    }
+
+    const sharedClient = global.__vetApiClient;
+    if (sharedClient && clientMatchesDevice(sharedClient, wantedDeviceId)) {
+      setApiClient(sharedClient);
+      return sharedClient;
+    }
+
     const cfg = {
       baseUrl: global.API_CONFIG?.baseUrl || "https://wick-vehicular-dingy.ngrok-free.dev",
-      deviceId: session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY",
+      deviceId: wantedDeviceId,
       timeoutMs: global.API_CONFIG?.timeoutMs || 25000,
     };
     const client = new global.VetApiClient(cfg);
-    if (session.password) {
-      await client.login(cfg.deviceId, session.password);
-    }
-    store.apiClient = client;
+    await client.login(wantedDeviceId, session.password);
+    setApiClient(client);
+    global.__vetApiClient = client;
     return client;
   }
 
@@ -341,7 +386,7 @@
     return testType === "heart" || testType === "lung";
   }
 
-  async function processPet(client, pet, targetDate, fetchAudio) {
+  async function processPet(client, pet, targetDate, fetchAudio, gen) {
     const petId = pet.pet_id || pet.id;
     const meta = petMetaOf(petId, pet, pet);
     const local = {
@@ -357,14 +402,17 @@
     };
 
     try {
-      const sessionsResponse = await client.examSessions(petId);
+      const [sessionsResponse, summaries] = await Promise.all([
+        client.examSessions(petId),
+        client.petTemperatureSummary(petId).then(normalizeSummaries).catch(() => []),
+      ]);
+      if (gen != null && gen !== syncGeneration) return local;
+
       const sessions = global.VetApiNormalize.normalizeSessions(sessionsResponse);
       const dateSessions = sessions.filter((s) => sessionStartedDateIst(s) === targetDate);
+      if (!dateSessions.length) return local;
 
-      const summaries = await client.petTemperatureSummary(petId).then(normalizeSummaries).catch(() => []);
-
-      await Promise.all(
-        dateSessions.map(async (s) => {
+      for (const s of dateSessions) {
           const sid = s.id || s.exam_session_id;
           const timeStr = sessionTimeIst(s);
           const hour = sessionHourIst(s);
@@ -380,34 +428,21 @@
           tempVal = tempFromSummary(irSummary, rectSummary);
           refVal = refFromSummary(irSummary || rectSummary);
 
-          if (tempVal == null) {
-            const tempPromise = client.petTemperatureBySession(petId, sid).catch((err) => {
-              console.warn(`Failed temperature for session ${sid}`, err);
-              return null;
-            });
-            const tempResp = await tempPromise;
-            if (tempResp) {
-              const readings = tempResp?.readings || tempResp?.temperature_readings || tempResp || [];
-              tempVal = getExamDFromReadings(readings);
-              if (refVal == null) refVal = getReferenceFromReadings(readings, meta.name);
+          if (tempVal != null) tests.add("Temperature");
+
+          if (fetchAudio) {
+            const recResp = await client.recordings(petId, sid).catch(() => null);
+            if (gen != null && gen !== syncGeneration) return local;
+            if (recResp) {
+              normalizeRecordings(recResp).forEach((r) => {
+                const container = String(r._audio_container || r.organ || r.recording_type || "").toLowerCase();
+                if (container.includes("heart")) tests.add("Heart Sound");
+                else if (container.includes("lung")) tests.add("Lung Sound");
+              });
             }
           }
 
-          if (tempVal != null) tests.add("Temperature");
-
-          const recPromise = fetchAudio
-            ? client.recordings(petId, sid).catch(() => null)
-            : Promise.resolve(null);
-          const recResp = await recPromise;
-          if (recResp) {
-            normalizeRecordings(recResp).forEach((r) => {
-              const container = String(r._audio_container || r.organ || r.recording_type || "").toLowerCase();
-              if (container.includes("heart")) tests.add("Heart Sound");
-              else if (container.includes("lung")) tests.add("Lung Sound");
-            });
-          }
-
-          if (!global.VetDashboardFilters?.matchesTestType?.(tests)) return;
+          if (!global.VetDashboardFilters?.matchesTestType?.(tests)) continue;
 
           local.speciesId = String(petId);
           if (hour != null) local.hourly[hour] = (local.hourly[hour] || 0) + 1;
@@ -462,8 +497,7 @@
             statusClass,
             timestamp: ts,
           });
-        })
-      );
+      }
     } catch (err) {
       console.warn(`Failed sessions for pet ${petId}`, err);
     }
@@ -573,19 +607,45 @@
     try {
       const client = await ensureClient();
       if (gen !== syncGeneration) return;
-      setProgress(8, "Loading pets…");
 
-      const [rawPets, yResp] = await Promise.all([
-        client.listPets(),
+      const activeDeviceId = expectedDeviceId();
+      if (store.deviceId && store.deviceId !== activeDeviceId) {
+        store.pets = [];
+        store.petMeta = {};
+        store.lastFingerprint = null;
+      }
+      store.deviceId = activeDeviceId;
+
+      setProgress(8, "Loading today’s animals…");
+
+      const [dailyResp, yResp] = await Promise.all([
+        client.dailyPets(targetDate).catch(() => null),
         client.dailyPets(addDaysIso(targetDate, -1)).catch(() => null),
       ]);
       if (gen !== syncGeneration) return;
 
-      store.pets = global.VetApiNormalize.normalizePets(rawPets);
-      store.petMeta = {};
-      global.VetDashboardFilters?.populateAnimalTypes?.();
-
-      const resolved = await resolvePetsForDate(client, targetDate, store.pets);
+      let resolved;
+      if ((dailyResp?.pets || []).length) {
+        resolved = {
+          list: dailyResp.pets.map(dailyPetRowFrom),
+          source: "daily-pets",
+        };
+        client
+          .listPets()
+          .then((rawPets) => {
+            if (gen !== syncGeneration) return;
+            store.pets = global.VetApiNormalize.normalizePets(rawPets);
+          })
+          .catch(() => {});
+        store.petMeta = {};
+      } else {
+        setProgress(12, "Scanning exam sessions…");
+        const rawPets = await client.listPets();
+        if (gen !== syncGeneration) return;
+        store.pets = global.VetApiNormalize.normalizePets(rawPets);
+        store.petMeta = {};
+        resolved = await resolvePetsForDate(client, targetDate, store.pets, dailyResp);
+      }
       if (gen !== syncGeneration) return;
 
       let dailyPetsList = resolved.list || [];
@@ -643,7 +703,7 @@
 
       const partials = await mapPool(dailyPetsList, CONCURRENCY, async (pet) => {
         if (gen !== syncGeneration) return null;
-        const result = await processPet(client, pet, targetDate, fetchAudio);
+        const result = await processPet(client, pet, targetDate, fetchAudio, gen);
         done += 1;
         const pct = 18 + (done / total) * 78;
         setProgress(pct, `Calculating ${Math.round(pct)}%`);
@@ -809,22 +869,27 @@
 
   function bootstrapIfLoggedIn() {
     if (!global.VetAuth?.isLoggedIn?.()) return;
-    const pollingToggle = document.getElementById("chk-auto-polling");
-    if (pollingToggle && pollingToggle.checked) {
-      startAutoPolling();
-    } else {
-      refreshTodayDashboard({ force: true });
-    }
+    clearTimeout(bootstrapTimer);
+    bootstrapTimer = setTimeout(() => {
+      bootstrapTimer = null;
+      const pollingToggle = document.getElementById("chk-auto-polling");
+      if (pollingToggle && pollingToggle.checked) startAutoPolling();
+      else refreshTodayDashboard({ force: true });
+    }, 60);
   }
 
   function resetStore() {
+    syncGeneration += 1;
     store.apiClient = null;
+    store.deviceId = null;
     store.pets = [];
     store.petMeta = {};
     store.lastFingerprint = null;
     store.lastDate = null;
     pendingRefresh = false;
     pendingForce = false;
+    clearTimeout(bootstrapTimer);
+    bootstrapTimer = null;
     stopAutoPolling();
   }
 
@@ -868,10 +933,6 @@
         global.VetAppPages?.openAnimalHistory?.(row.getAttribute("data-pet-id"));
       });
     }
-
-    if (global.VetAuth?.isLoggedIn?.()) {
-      bootstrapIfLoggedIn();
-    }
   }
 
   document.addEventListener("DOMContentLoaded", init);
@@ -881,6 +942,7 @@
     refreshTodayDashboard,
     scheduleForceRefresh,
     resetStore,
+    setApiClient,
     todayIsoIst,
     ensureClient,
     resolvePetsForDate,

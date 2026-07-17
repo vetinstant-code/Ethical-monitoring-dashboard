@@ -146,16 +146,24 @@
 
     try {
       if (!global.API_CONFIG?.baseUrl) throw new Error("API not configured (config.api.js).");
+
+      if (global.VetLiveApi?.resetStore) global.VetLiveApi.resetStore();
+      global.__vetApiClient = null;
+
       const client = new global.VetApiClient({ ...global.API_CONFIG, deviceId });
       await client.login(deviceId, password);
 
       saveSession(deviceId, password);
       sessionStorage.setItem("vet_device_password", password);
       global.__vetApiClient = client;
+      if (global.VetLiveApi?.setApiClient) global.VetLiveApi.setApiClient(client);
 
       showApp();
       applyDeviceMode(true, deviceId);
+      global.VetAppPages?.route?.();
       onDashboardReady();
+      global.VetDashboardFilters?.populateAnimalTypes?.();
+      window.dispatchEvent(new CustomEvent("vet:session-changed", { detail: { deviceId } }));
     } catch (e) {
       if (err) {
         err.textContent = e.message || "Login failed. Check password and API connection.";
@@ -184,12 +192,39 @@
     $("logout-btn")?.addEventListener("click", handleLogout);
 
     window.addEventListener("dashboard:ready", () => {
-      if (isLoggedIn()) onDashboardReady();
+      if (isLoggedIn()) global.VetAppPages?.route?.();
+    });
+
+    window.addEventListener("storage", (e) => {
+      if (e.key !== SESSION_KEY) return;
+      if (!e.newValue) {
+        handleLogout();
+        return;
+      }
+      try {
+        const next = JSON.parse(e.newValue);
+        const nextDevice = String(next.deviceId || "").trim().toUpperCase();
+        let prevDevice = "";
+        if (e.oldValue) {
+          prevDevice = String(JSON.parse(e.oldValue).deviceId || "").trim().toUpperCase();
+        }
+        if (nextDevice && nextDevice !== prevDevice) {
+          global.VetLiveApi?.resetStore?.();
+          global.__vetApiClient = null;
+          applyDeviceMode(false, nextDevice);
+          global.VetAppPages?.route?.();
+          onDashboardReady();
+          global.VetDashboardFilters?.populateAnimalTypes?.();
+        }
+      } catch {
+        /* ignore malformed session */
+      }
     });
 
     if (isLoggedIn()) {
       showApp();
       applyDeviceMode(false);
+      global.VetAppPages?.route?.();
       if (global.VetLiveApi?.bootstrapIfLoggedIn) {
         global.VetLiveApi.bootstrapIfLoggedIn();
       }

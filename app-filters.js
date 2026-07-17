@@ -309,6 +309,7 @@
   async function populateAnimalTypes() {
     const panel = document.getElementById("dash-dd-animal-panel");
     if (!panel) return;
+    if (!global.VetAuth?.isLoggedIn?.()) return;
 
     const found = new Set(CANONICAL_SPECIES);
     try {
@@ -415,6 +416,7 @@
     if (chrome) chrome.hidden = !visible;
     if (bar) bar.hidden = !visible;
     document.body.classList.toggle("dashboard-chrome", !!visible);
+    if (visible) syncUi();
     if (!visible) closeAllDropdowns();
   }
 
@@ -424,7 +426,11 @@
     calViewMonth = d.getMonth();
     syncUi();
     bindUi();
-    populateAnimalTypes();
+    if (global.VetAuth?.isLoggedIn?.()) populateAnimalTypes();
+    window.addEventListener("vet:session-changed", () => {
+      populateAnimalTypes();
+      syncUi();
+    });
   }
 
   document.addEventListener("DOMContentLoaded", init);
@@ -440,6 +446,7 @@
     populateAnimalTypes,
     canonicalizeSpecies,
     showBar,
+    syncUi,
     formatDisplay,
     triggerDashboardSync,
   };
