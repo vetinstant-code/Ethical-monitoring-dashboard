@@ -146,35 +146,38 @@
     const heartCount = counts?.heart ?? null;
     const lungCount = counts?.lung ?? null;
     const canDownloadTemp = !scanning && tempCount != null && tempCount > 0;
+    const canDownloadHeart = !scanning && heartCount != null && heartCount > 0;
+    const canDownloadLung = !scanning && lungCount != null && lungCount > 0;
+    const canDownloadComplete = !scanning && (canDownloadTemp || canDownloadHeart || canDownloadLung);
 
     if (tempBtn) {
       tempBtn.disabled = !canDownloadTemp;
       tempBtn.textContent = scanning ? "Scanning…" : canDownloadTemp ? "Download" : "No data yet";
-      tempBtn.title = canDownloadTemp ? "" : "Run a scan with temperature records in range";
+      tempBtn.title = canDownloadTemp ? "" : "No temperature records in this range";
     }
 
     if (heartBtn) {
-      heartBtn.disabled = true;
-      heartBtn.textContent = heartCount > 0 ? "Coming soon" : "Coming soon";
-      heartBtn.title = "Heart sound ZIP needs browser audio batch API (not wired yet)";
+      heartBtn.disabled = !canDownloadHeart;
+      heartBtn.textContent = scanning ? "Scanning…" : canDownloadHeart ? "Download" : "No files yet";
+      heartBtn.title = canDownloadHeart ? "Download heart sound WAV files as ZIP" : "No heart recordings in this range";
     }
 
     if (lungBtn) {
-      lungBtn.disabled = true;
-      lungBtn.textContent = "Coming soon";
-      lungBtn.title = "Lung sound ZIP needs browser audio batch API (not wired yet)";
+      lungBtn.disabled = !canDownloadLung;
+      lungBtn.textContent = scanning ? "Scanning…" : canDownloadLung ? "Download" : "No files yet";
+      lungBtn.title = canDownloadLung ? "Download lung sound WAV files as ZIP" : "No lung recordings in this range";
     }
 
     if (completeBtn) {
-      completeBtn.disabled = !canDownloadTemp;
+      completeBtn.disabled = !canDownloadComplete;
       completeBtn.textContent = scanning
         ? "Scanning…"
-        : canDownloadTemp
-          ? "Download Temperature Excel"
+        : canDownloadComplete
+          ? "Download Complete ZIP"
           : "No data yet";
-      completeBtn.title = canDownloadTemp
-        ? "Exports temperature Excel for the selected range. Audio ZIP pending API."
-        : "Scan data first — export needs at least one temperature record";
+      completeBtn.title = canDownloadComplete
+        ? "ZIP with temperature Excel + heart/lung WAV for the scanned range"
+        : "Scan data first — nothing to export yet";
     }
   }
 
@@ -723,20 +726,47 @@
   }
 
   async function downloadAudioKind(kind) {
-    setStatus(`Preparing ${kind} sound ZIP download…`);
+    readFiltersFromState();
+    const from = state.from || todayIso();
+    const to = state.to || todayIso();
+    if (from > to) throw new Error("Start date must be on or before end date.");
+    if (!global.VetExcelGenerator?.exportAudioZip) {
+      throw new Error("Audio export unavailable.");
+    }
+
+    progressShow(`Preparing ${kind} sound ZIP…`, 0);
+    progressLog(`Range: ${rangeLabel()}`);
+
+    const logger = {
+      log: (msg) => progressLog(msg),
+      warn: (msg) => progressLog(msg),
+      error: console.error,
+    };
+
+    const result = await global.VetExcelGenerator.exportAudioZip(
+      {
+        from,
+        to,
+        animalType: state.animalType,
+        testType: state.testType,
+        deviceId: currentDeviceId(),
+      },
+      kind,
+      logger,
+      (pct, label) => progressUpdate(label || "Exporting audio…", Math.min(99, pct))
+    );
+
     pushHistory({
       when: new Date().toLocaleString("en-IN", { hour12: true }),
       type: kind === "heart" ? "Heart Sound Data" : "Lung Sound Data",
       range: rangeLabel(),
-      records: "—",
+      records: `${result.saved} file${result.saved === 1 ? "" : "s"}`,
       format: "ZIP",
       size: "—",
-      actionHtml: '<span class="reports-hist-pending">Pending API</span>',
+      actionHtml: '<span class="reports-hist-done">Downloaded</span>',
     });
-    setStatus(
-      `${kind === "heart" ? "Heart" : "Lung"} sound ZIP export will use the device audio batch API. UI is ready; wire-up next.`,
-      true
-    );
+    progressDone(`${kind === "heart" ? "Heart" : "Lung"} ZIP downloaded · ${result.saved} file(s)`);
+    setStatus(`${kind === "heart" ? "Heart" : "Lung"} sound ZIP downloaded · ${result.saved} file(s) · ${rangeLabel()}`);
   }
 
   async function downloadComplete() {
@@ -744,59 +774,47 @@
     const from = state.from || todayIso();
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
-
-    if (!global.VetExcelGenerator?.compileDailySummary) {
-      throw new Error("Export generator unavailable.");
+    if (!global.VetExcelGenerator?.exportCompleteZip) {
+      throw new Error("Complete export unavailable.");
     }
 
-    const days =
-      global.VetExcelGenerator.enumerateDays?.(from, to) ||
-      (() => {
-        const out = [];
-        let cursor = from;
-        while (cursor <= to) {
-          out.push(cursor);
-          if (cursor === to) break;
-          cursor = addDaysIso(cursor, 1);
-        }
-        return out;
-      })();
+    progressShow("Preparing complete export ZIP…", 0);
+    progressLog(`Exporting all scanned data for: ${rangeLabel()}`);
 
-    progressShow(`Complete export — ${days.length} day(s)…`, 0);
-    progressLog(`Exporting all data for: ${rangeLabel()}`);
-    progressLog("Step 1 of 2 — Temperature Excel");
+    const logger = {
+      log: (msg) => progressLog(msg),
+      warn: (msg) => progressLog(msg),
+      error: console.error,
+      success: (msg) => progressLog(msg, "done"),
+    };
 
-    let totalRows = 0;
-    for (let i = 0; i < days.length; i++) {
-      const day = days[i];
-      const pct = Math.round((i / days.length) * 70);
-      progressUpdate(`Temperature — ${formatDisplay(day)} (${i + 1}/${days.length})`, pct);
-      progressLog(`Processing ${formatDisplay(day)}…`);
-      const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), {
-        log: (msg) => progressLog(msg),
-        warn: (msg) => progressLog(msg),
-        error: console.error,
-        success: (msg) => progressLog(msg, "done"),
-      }, { animalType: state.animalType });
-      const rows = Number(result?.rows_written) || 0;
-      totalRows += rows;
-      progressLog(`${formatDisplay(day)}: ${rows} row(s)`, "done");
-    }
-
-    progressUpdate("Step 2 — Audio files (pending API)", 80);
-    progressLog("Heart/lung sound ZIP requires device audio batch API — skipped for now.");
+    const result = await global.VetExcelGenerator.exportCompleteZip(
+      {
+        from,
+        to,
+        animalType: state.animalType,
+        testType: state.testType,
+        deviceId: currentDeviceId(),
+      },
+      logger,
+      (pct, label) => progressUpdate(label || "Building complete ZIP…", Math.min(99, pct))
+    );
 
     pushHistory({
       when: new Date().toLocaleString("en-IN", { hour12: true }),
       type: "Complete Data Export",
       range: rangeLabel(),
-      records: `${totalRows} temperature row${totalRows === 1 ? "" : "s"}`,
-      format: "Excel",
+      records: `${result.tempRows} temp row(s) · ${result.audioSaved} audio file(s)`,
+      format: "ZIP",
       size: "—",
       actionHtml: '<span class="reports-hist-done">Downloaded</span>',
     });
-    progressDone(`Export done · ${totalRows} temperature row(s) · audio ZIP pending`);
-    setStatus(`Export complete · ${totalRows} temperature row(s). Audio ZIP requires device API.`);
+    progressDone(
+      `Complete ZIP downloaded · ${result.tempFiles} Excel · ${result.audioSaved} audio file(s)`
+    );
+    setStatus(
+      `Complete export downloaded · ${result.tempFiles} temperature file(s), ${result.audioSaved} audio file(s) · ${rangeLabel()}`
+    );
   }
 
   function openReportsDropdown(ddId, panelId, triggerId) {

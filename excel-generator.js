@@ -897,6 +897,401 @@
     return { temperature, heart, lung, pets: pets.length };
   }
 
+  function slugifyName(value) {
+    return String(value || "")
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "unknown";
+  }
+
+  function buildSessionNumberMap(examSessions) {
+    const byId = {};
+    (examSessions || []).forEach((session, idx) => {
+      const sid = String(session.id || session.exam_session_id || "").trim();
+      if (!sid) return;
+      for (const key of ["session_index", "session_number", "session_no", "number", "sequence"]) {
+        const raw = session[key];
+        if (raw != null) {
+          const n = Number(raw);
+          if (Number.isFinite(n) && n >= 1) {
+            byId[sid] = n;
+            break;
+          }
+        }
+      }
+      if (!byId[sid]) byId[sid] = idx + 1;
+    });
+    return byId;
+  }
+
+  function sessionNoFromMap(byId, sessionId) {
+    const uuid = String(sessionId || "").trim();
+    if (!uuid || !byId) return 1;
+    if (byId[uuid] != null) return byId[uuid];
+    const lower = uuid.toLowerCase();
+    for (const [sid, num] of Object.entries(byId)) {
+      if (sid.toLowerCase() === lower) return num;
+    }
+    return 1;
+  }
+
+  function audioStreamTypesToTry(rec) {
+    const c = String(rec._audio_container || "").toLowerCase();
+    if (c === "heart") return ["session", "heart"];
+    if (c === "lung") return ["session", "lung"];
+    return ["session", "heart", "lung"];
+  }
+
+  function audioOrganSlug(rec) {
+    for (const key of ["organ", "recording_organ", "body_system", "category", "recording_type"]) {
+      const raw = rec[key];
+      if (raw == null) continue;
+      const text = String(raw).trim().toLowerCase();
+      if (!text) continue;
+      if (text === "heart" || text === "lung") return text;
+      const slug = slugifyName(text).toLowerCase();
+      if (slug) return slug;
+    }
+    const c = String(rec._audio_container || "").trim().toLowerCase();
+    if (c === "heart" || c === "lung") return c;
+    return "session";
+  }
+
+  function audioPointLetter(rec) {
+    const raw = String(rec.point || rec.slot || rec.recording_point || "").trim().toLowerCase();
+    if (["p", "a", "m", "t"].includes(raw)) return raw;
+    if (raw.length === 1 && /[a-z]/i.test(raw)) return raw;
+    const blob = `${raw} ${rec.title || ""} ${rec.name || ""} ${rec.location || ""}`.toLowerCase();
+    for (const [word, ch] of [
+      ["pulmonary", "p"],
+      ["tricuspid", "t"],
+      ["mitral", "m"],
+      ["aortic", "a"],
+    ]) {
+      if (blob.includes(word)) return ch;
+    }
+    const slug = slugifyName(raw).toLowerCase();
+    return slug ? slug.slice(0, 1) : "x";
+  }
+
+  function recordingDatetimeFilenameParts(rec) {
+    const row = {
+      recorded_at: rec.completed_at || rec.recorded_at || rec.created_at,
+      created_at: rec.completed_at || rec.recorded_at || rec.created_at,
+      timestamp: rec.timestamp,
+      s3_key: rec.s3_key || "",
+    };
+    const parts = extractDatetimeParts(row);
+    if (parts[0] !== "unknown") {
+      return [parts[0], parts[1].replace(/:/g, "-")];
+    }
+    const now = coerceToIstNaiveForSort(new Date());
+    return [formatDateIso(now), formatTimeIso(now).replace(/:/g, "-")];
+  }
+
+  function recordingMatchesKind(rec, kind) {
+    const container = String(rec._audio_container || rec.organ || rec.recording_type || "").toLowerCase();
+    if (kind === "heart") return container.includes("heart");
+    if (kind === "lung") return container.includes("lung");
+    return container.includes("heart") || container.includes("lung");
+  }
+
+  async function downloadOneRecordingWav(client, cfg, petId, recordingId, rec) {
+    for (const recType of audioStreamTypesToTry(rec)) {
+      try {
+        const meta = await client.recordingAudioMetadata(recordingId, petId, recType, cfg);
+        if (!meta || typeof meta !== "object") continue;
+        const href = String(meta.audio_url || meta.stream_url || meta.url || "").trim();
+        if (!href) continue;
+        const buf = await client.downloadBinaryByHref(href, cfg);
+        if (buf && buf.byteLength > 0) return buf;
+      } catch {
+        /* try next stream type */
+      }
+    }
+    return null;
+  }
+
+  function uniqueZipPath(folder, baseName, usedPaths) {
+    let path = `${folder}/${baseName}.wav`;
+    let n = 0;
+    while (usedPaths.has(path)) {
+      n += 1;
+      path = `${folder}/${baseName}_${n}.wav`;
+    }
+    usedPaths.add(path);
+    return path;
+  }
+
+  async function collectAudioRecordings(client, cfg, pets, from, to, kinds, logger, onProgress) {
+    const wantHeart = kinds.includes("heart");
+    const wantLung = kinds.includes("lung");
+    const items = [];
+    const total = Math.max(pets.length, 1);
+    let done = 0;
+
+    for (const pet of pets) {
+      const petId = String(pet.pet_id || pet.id || "").trim();
+      if (!petId) {
+        done += 1;
+        continue;
+      }
+      const petSlug = slugifyName(pet.pet_name || pet.name || petId);
+      let uniqueSessions = [];
+      try {
+        const sessionsResponse = await client.examSessionsWithContext(petId, cfg);
+        const sessions = Array.isArray(sessionsResponse)
+          ? sessionsResponse
+          : sessionsResponse?.exam_sessions || [];
+        uniqueSessions = dedupeSessions(sessions);
+      } catch (err) {
+        logger.warn?.(`Sessions unavailable for ${petSlug}: ${err.message || err}`);
+        done += 1;
+        onProgress?.(Math.round((done / total) * 100), `Listing audio ${done}/${total}`);
+        continue;
+      }
+
+      const sessionNoMap = buildSessionNumberMap(uniqueSessions);
+      const sessionsInRange = uniqueSessions.filter((s) =>
+        dateInRange(examSessionStartedDateIst(s), from, to)
+      );
+
+      for (const session of sessionsInRange) {
+        const sid = String(session.id || session.exam_session_id || "").trim();
+        if (!sid) continue;
+        const sessionNo = sessionNoFromMap(sessionNoMap, sid);
+        let recPayload;
+        try {
+          recPayload = await client.recordings(petId, sid);
+        } catch {
+          continue;
+        }
+        for (const rec of normalizeRecordings(recPayload)) {
+          const organ = audioOrganSlug(rec);
+          const isHeart = organ.includes("heart") || String(rec._audio_container || "").includes("heart");
+          const isLung = organ.includes("lung") || String(rec._audio_container || "").includes("lung");
+          if (wantHeart && isHeart) {
+            items.push({ petId, petSlug, rec, sessionNo, sid, kind: "heart" });
+          } else if (wantLung && isLung) {
+            items.push({ petId, petSlug, rec, sessionNo, sid, kind: "lung" });
+          }
+        }
+      }
+
+      done += 1;
+      onProgress?.(Math.round((done / total) * 100), `Listing audio ${done}/${total} · ${petSlug}`);
+    }
+
+    return items;
+  }
+
+  async function addAudioFilesToZip(zip, client, cfg, items, logger, onProgress, progressBase = 0, progressSpan = 100) {
+    const usedPaths = new Set();
+    let saved = 0;
+    let skipped = 0;
+    const total = Math.max(items.length, 1);
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const rid = String(item.rec.id || item.rec.recording_id || "").trim();
+      if (!rid) {
+        skipped += 1;
+        continue;
+      }
+      const organ = audioOrganSlug(item.rec);
+      const point = audioPointLetter(item.rec);
+      const [datePart, timePart] = recordingDatetimeFilenameParts(item.rec);
+      const baseName = `${item.petSlug}_${organ}_${point}_${item.sessionNo}_${datePart}_${timePart}`;
+      const folder = item.kind === "lung" ? "lung" : "heart";
+      const zipPath = uniqueZipPath(folder, baseName, usedPaths);
+
+      onProgress?.(
+        progressBase + Math.round(((i + 1) / total) * progressSpan),
+        `Downloading ${folder} ${i + 1}/${items.length}`
+      );
+      logger.log?.(`Fetching ${zipPath}…`);
+
+      const buf = await downloadOneRecordingWav(client, cfg, item.petId, rid, item.rec);
+      if (buf) {
+        zip.file(zipPath, buf);
+        saved += 1;
+        logger.log?.(`Added ${zipPath}`, "done");
+      } else {
+        skipped += 1;
+        logger.warn?.(`Skipped ${zipPath} (no audio stream)`);
+      }
+    }
+
+    return { saved, skipped };
+  }
+
+  function triggerBlobDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function generateZipBlob(zip, onProgress) {
+    return zip.generateAsync({ type: "blob", compression: "DEFLATE" }, (meta) => {
+      onProgress?.(meta.percent, "Compressing ZIP…");
+    });
+  }
+
+  async function exportAudioZip(filters, kind, logger = { log() {} }, onProgress = null) {
+    if (!global.JSZip) throw new Error("ZIP library not loaded.");
+    const from = filters.from;
+    const to = filters.to;
+    if (!from || !to || from > to) throw new Error("Invalid date range.");
+
+    onProgress?.(2, "Connecting…");
+    const { client, cfg } = await createReportClient(filters.deviceId);
+    const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
+    const pets = await resolvePetsForDateRange(client, from, to, allPets, filters.animalType || "all", (pct, label) => {
+      onProgress?.(2 + Math.round(pct * 0.08), label || "Loading animals…");
+    });
+
+    logger.log(`Collecting ${kind} sound files…`);
+    const items = await collectAudioRecordings(
+      client,
+      cfg,
+      pets,
+      from,
+      to,
+      [kind],
+      logger,
+      (pct, label) => onProgress?.(10 + Math.round(pct * 0.15), label || "Listing files…")
+    );
+
+    if (!items.length) throw new Error(`No ${kind} sound files found in the selected range.`);
+
+    const zip = new global.JSZip();
+    const { saved, skipped } = await addAudioFilesToZip(
+      zip,
+      client,
+      cfg,
+      items,
+      logger,
+      (pct, label) => onProgress?.(25 + Math.round(pct * 0.65), label || "Downloading audio…"),
+      25,
+      65
+    );
+
+    if (!saved) throw new Error(`Could not download any ${kind} sound files (${skipped} skipped).`);
+
+    onProgress?.(92, "Building ZIP…");
+    const blob = await generateZipBlob(zip, (pct) => onProgress?.(92 + Math.round(pct * 0.08), "Compressing ZIP…"));
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const filename = `${kind}_sound_${from}_${to}_${stamp}.zip`;
+    triggerBlobDownload(blob, filename);
+    onProgress?.(100, "Download started");
+    return { saved, skipped, filename, kind };
+  }
+
+  async function exportCompleteZip(filters, logger = { log() {} }, onProgress = null) {
+    if (!global.JSZip) throw new Error("ZIP library not loaded.");
+    const from = filters.from;
+    const to = filters.to;
+    const animalType = filters.animalType || "all";
+    const deviceId = filters.deviceId;
+    if (!from || !to || from > to) throw new Error("Invalid date range.");
+
+    const days = enumerateDays(from, to);
+    const zip = new global.JSZip();
+    let tempFiles = 0;
+    let tempRows = 0;
+
+    onProgress?.(2, "Preparing complete export…");
+    logger.log(`Export range: ${from} → ${to} (${days.length} day(s))`);
+
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i];
+      const pct = 2 + Math.round((i / Math.max(days.length, 1)) * 38);
+      onProgress?.(pct, `Temperature Excel ${i + 1}/${days.length} · ${day}`);
+      logger.log(`Building Excel for ${day}…`);
+      try {
+        const result = await compileDailySummary(day, deviceId, logger, {
+          animalType,
+          download: false,
+        });
+        const rows = Number(result?.rows_written) || 0;
+        if (rows > 0 && result.buffer) {
+          zip.file(`temperature/${result.filename}`, result.buffer);
+          tempFiles += 1;
+          tempRows += rows;
+          logger.log(`${day}: ${rows} row(s) added to ZIP`, "done");
+        } else {
+          logger.log(`${day}: no rows — skipped`);
+        }
+      } catch (err) {
+        logger.warn?.(`${day}: ${err.message || err}`);
+      }
+    }
+
+    onProgress?.(42, "Collecting audio files…");
+    const { client, cfg } = await createReportClient(deviceId);
+    const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
+    const pets = await resolvePetsForDateRange(client, from, to, allPets, animalType, (pct, label) => {
+      onProgress?.(42 + Math.round(pct * 0.08), label || "Loading animals for audio…");
+    });
+
+    const audioItems = await collectAudioRecordings(
+      client,
+      cfg,
+      pets,
+      from,
+      to,
+      ["heart", "lung"],
+      logger,
+      (pct, label) => onProgress?.(50 + Math.round(pct * 0.1), label || "Listing audio…")
+    );
+
+    let audioSaved = 0;
+    let audioSkipped = 0;
+    if (audioItems.length) {
+      const audioResult = await addAudioFilesToZip(
+        zip,
+        client,
+        cfg,
+        audioItems,
+        logger,
+        (pct, label) => onProgress?.(60 + Math.round(pct * 0.3), label || "Downloading audio…"),
+        60,
+        30
+      );
+      audioSaved = audioResult.saved;
+      audioSkipped = audioResult.skipped;
+    } else {
+      logger.log("No heart/lung recordings in range.");
+    }
+
+    if (!tempFiles && !audioSaved) {
+      throw new Error("Nothing to export — no temperature rows or audio files in the selected range.");
+    }
+
+    zip.file(
+      "export_manifest.txt",
+      [
+        `Device: ${deviceId || cfg.deviceId}`,
+        `Range: ${from} → ${to}`,
+        `Temperature files: ${tempFiles} (${tempRows} rows)`,
+        `Audio files: ${audioSaved} (${audioSkipped} skipped)`,
+        `Generated: ${new Date().toISOString()}`,
+      ].join("\n")
+    );
+
+    onProgress?.(92, "Compressing complete ZIP…");
+    const blob = await generateZipBlob(zip, (pct) => onProgress?.(92 + Math.round(pct * 0.08), "Compressing ZIP…"));
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const filename = `complete_export_${from}_${to}_${stamp}.zip`;
+    triggerBlobDownload(blob, filename);
+    onProgress?.(100, "Download started");
+    return { tempFiles, tempRows, audioSaved, audioSkipped, filename };
+  }
+
   /**
    * Main Browser Export trigger
    */
@@ -1567,12 +1962,14 @@
 
     logger.log(`Compilation successful! Triggering client download for '${filename}'...`);
 
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(outputBlob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (options.download !== false) {
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(outputBlob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
 
     logger.success(`Report compiled successfully: ${writtenRows} row(s), skipped: ${skippedCount}, notes: ${notesCount}.`);
     return {
@@ -1580,6 +1977,8 @@
       skipped: skippedCount,
       notes: notesCount,
       pet_count: pets.length,
+      buffer: outputBuffer,
+      filename,
     };
   }
 
@@ -1590,6 +1989,8 @@
     createReportClient,
     discoverSavedDataRange,
     enumerateDays,
+    exportAudioZip,
+    exportCompleteZip,
   };
 
   // Helper init inside document ready

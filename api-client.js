@@ -203,6 +203,35 @@
         deviceId,
       });
     }
+
+    recordingAudioMetadata(recordingId, petId, recType = "session", { baseUrl, deviceId } = {}) {
+      return this._request("GET", `/api/recordings/${encodeURIComponent(recordingId)}/audio`, {
+        params: { pet_id: petId, type: recType },
+        baseUrl,
+        deviceId,
+      });
+    }
+
+    async downloadBinaryByHref(href, { baseUrl, deviceId } = {}) {
+      const clean = String(href || "").trim();
+      if (!clean) throw new Error("Missing audio download URL.");
+      const url = /^https?:\/\//i.test(clean) ? clean : this._url(clean, baseUrl);
+      const headers = {
+        "X-Device-Id": deviceId || this.deviceId,
+        "ngrok-skip-browser-warning": "1",
+      };
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const res = await fetch(url.toString(), { method: "GET", headers, signal: controller.signal });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} when downloading audio`);
+        }
+        return res.arrayBuffer();
+      } finally {
+        clearTimeout(timer);
+      }
+    }
   }
 
   /** Normalize list responses like ui.py does */
