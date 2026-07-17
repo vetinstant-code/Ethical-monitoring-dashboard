@@ -1476,7 +1476,16 @@
     }
 
     if (!pets || pets.length === 0) {
-      throw new Error(`No pets found for date: ${selectedDate} with the selected filters.`);
+      logger.log(`No pets found for date: ${selectedDate} with the selected filters — skipping day.`);
+      return {
+        rows_written: 0,
+        skipped: 0,
+        notes: 0,
+        pet_count: 0,
+        buffer: null,
+        filename: null,
+        skipped_empty: true,
+      };
     }
 
     logger.log(`Found ${pets.length} pet(s) registered on this day. Fetching template 'oneday_summary.xlsx'...`);

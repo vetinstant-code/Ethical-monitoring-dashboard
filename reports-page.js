@@ -788,6 +788,10 @@
     progressLog(`Range: ${rangeLabel()} · ${days.length} day(s)`);
 
     let totalRows = 0;
+    let daysWritten = 0;
+    let daysSkipped = 0;
+    let daysFailed = 0;
+
     for (let i = 0; i < days.length; i++) {
       const day = days[i];
       const pct = Math.round(((i) / days.length) * 90);
@@ -801,16 +805,38 @@
         success: (msg) => progressLog(msg, "done"),
       };
 
-      const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), logger, {
-        animalType: state.animalType,
-      });
-      const rows = Number(result?.rows_written) || 0;
-      totalRows += rows;
-      progressLog(`${formatDisplay(day)}: ${rows} row(s) written`, "done");
+      try {
+        const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), logger, {
+          animalType: state.animalType,
+        });
+        const rows = Number(result?.rows_written) || 0;
+        if (rows > 0) {
+          totalRows += rows;
+          daysWritten += 1;
+          progressLog(`${formatDisplay(day)}: ${rows} row(s) written`, "done");
+        } else {
+          daysSkipped += 1;
+          progressLog(`${formatDisplay(day)}: no pets / no rows — skipped`);
+        }
+      } catch (err) {
+        daysFailed += 1;
+        progressLog(`${formatDisplay(day)}: ${err.message || err}`, "error");
+      }
+    }
+
+    if (!totalRows) {
+      throw new Error(
+        daysFailed
+          ? `No temperature Excel generated — ${daysFailed} day(s) failed and the rest were empty.`
+          : "No temperature Excel generated — no pets or rows found in the selected range."
+      );
     }
 
     progressUpdate("Saving Excel file…", 96);
-    progressLog("Triggering file download…", "done");
+    progressLog(
+      `Done · ${daysWritten} day(s) with data · ${daysSkipped} skipped · ${daysFailed} failed`,
+      "done"
+    );
 
     pushHistory({
       when: new Date().toLocaleString("en-IN", { hour12: true }),
@@ -821,8 +847,14 @@
       size: "—",
       actionHtml: '<span class="reports-hist-done">Downloaded</span>',
     });
-    progressDone(`Excel downloaded · ${totalRows} row(s) · ${rangeLabel()}`);
-    setStatus(`Temperature Excel downloaded · ${totalRows} row${totalRows === 1 ? "" : "s"} · ${rangeLabel()}`);
+    progressDone(
+      `Excel downloaded · ${totalRows} row(s) · ${daysWritten} day(s) · ${rangeLabel()}`
+    );
+    setStatus(
+      `Temperature Excel downloaded · ${totalRows} row${totalRows === 1 ? "" : "s"} · ${daysWritten} day(s) with data` +
+        (daysSkipped ? ` · ${daysSkipped} empty day(s) skipped` : "") +
+        (daysFailed ? ` · ${daysFailed} day(s) failed` : "")
+    );
   }
 
   async function downloadAudioKind(kind) {
