@@ -709,18 +709,45 @@
     return results;
   }
 
-  async function createReportClient(deviceId) {
+  async function createReportClient(deviceId, options = {}) {
     const session = global.VetAuth?.getSession?.() || {};
     const cfg = {
       baseUrl: global.API_CONFIG.baseUrl,
       deviceId: deviceId || session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY",
-      timeoutMs: 25000,
+      timeoutMs: Number(options.timeoutMs) || 25000,
     };
     const client = new global.VetApiClient(cfg);
     if (session.deviceId && session.password) {
       await client.login(session.deviceId, session.password);
     }
     return { client, cfg };
+  }
+
+  async function fetchWithRetry(fn, retries = 3, delayMs = 900) {
+    let lastErr;
+    for (let attempt = 0; attempt < retries; attempt += 1) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        if (attempt < retries - 1) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  function recordingContainerKind(rec) {
+    return String(rec._audio_container || rec.organ || rec.recording_type || "").toLowerCase();
+  }
+
+  function recordingIsHeart(rec) {
+    return recordingContainerKind(rec).includes("heart");
+  }
+
+  function recordingIsLung(rec) {
+    return recordingContainerKind(rec).includes("lung");
   }
 
   async function discoverSavedDataRange(client, cfg, allPets, animalType, onProgress = null) {
@@ -873,11 +900,10 @@
           const sid = String(s.id || s.exam_session_id || "").trim();
           if (!sid) continue;
           try {
-            const rec = await client.recordings(petId, sid);
+            const rec = await client.recordingsWithContext(petId, sid, cfg);
             normalizeRecordings(rec).forEach((r) => {
-              const container = String(r._audio_container || r.organ || r.recording_type || "").toLowerCase();
-              if (needHeart && container.includes("heart")) heart += 1;
-              if (needLung && container.includes("lung")) lung += 1;
+              if (needHeart && recordingIsHeart(r)) heart += 1;
+              if (needLung && recordingIsLung(r)) lung += 1;
             });
           } catch {
             /* ignore missing recordings */
@@ -894,7 +920,7 @@
     });
 
     onProgress?.(100, "Scan complete");
-    return { temperature, heart, lung, pets: pets.length };
+    return { temperature, heart, lung, pets: pets.length, resolvedPets: pets };
   }
 
   function slugifyName(value) {
@@ -988,13 +1014,6 @@
     return [formatDateIso(now), formatTimeIso(now).replace(/:/g, "-")];
   }
 
-  function recordingMatchesKind(rec, kind) {
-    const container = String(rec._audio_container || rec.organ || rec.recording_type || "").toLowerCase();
-    if (kind === "heart") return container.includes("heart");
-    if (kind === "lung") return container.includes("lung");
-    return container.includes("heart") || container.includes("lung");
-  }
-
   async function downloadOneRecordingWav(client, cfg, petId, recordingId, rec) {
     for (const recType of audioStreamTypesToTry(rec)) {
       try {
@@ -1025,20 +1044,26 @@
   async function collectAudioRecordings(client, cfg, pets, from, to, kinds, logger, onProgress) {
     const wantHeart = kinds.includes("heart");
     const wantLung = kinds.includes("lung");
-    const items = [];
     const total = Math.max(pets.length, 1);
     let done = 0;
 
-    for (const pet of pets) {
+    const batches = await mapPool(pets, 4, async (pet) => {
+      const petItems = [];
       const petId = String(pet.pet_id || pet.id || "").trim();
+      const petSlug = slugifyName(pet.pet_name || pet.name || petId);
       if (!petId) {
         done += 1;
-        continue;
+        onProgress?.(Math.round((done / total) * 100), `Listing audio ${done}/${total}`);
+        return petItems;
       }
-      const petSlug = slugifyName(pet.pet_name || pet.name || petId);
+
       let uniqueSessions = [];
       try {
-        const sessionsResponse = await client.examSessionsWithContext(petId, cfg);
+        const sessionsResponse = await fetchWithRetry(
+          () => client.examSessionsWithContext(petId, cfg),
+          3,
+          1000
+        );
         const sessions = Array.isArray(sessionsResponse)
           ? sessionsResponse
           : sessionsResponse?.exam_sessions || [];
@@ -1047,7 +1072,7 @@
         logger.warn?.(`Sessions unavailable for ${petSlug}: ${err.message || err}`);
         done += 1;
         onProgress?.(Math.round((done / total) * 100), `Listing audio ${done}/${total}`);
-        continue;
+        return petItems;
       }
 
       const sessionNoMap = buildSessionNumberMap(uniqueSessions);
@@ -1061,24 +1086,73 @@
         const sessionNo = sessionNoFromMap(sessionNoMap, sid);
         let recPayload;
         try {
-          recPayload = await client.recordings(petId, sid);
+          recPayload = await fetchWithRetry(
+            () => client.recordingsWithContext(petId, sid, cfg),
+            2,
+            700
+          );
         } catch {
           continue;
         }
         for (const rec of normalizeRecordings(recPayload)) {
-          const organ = audioOrganSlug(rec);
-          const isHeart = organ.includes("heart") || String(rec._audio_container || "").includes("heart");
-          const isLung = organ.includes("lung") || String(rec._audio_container || "").includes("lung");
-          if (wantHeart && isHeart) {
-            items.push({ petId, petSlug, rec, sessionNo, sid, kind: "heart" });
-          } else if (wantLung && isLung) {
-            items.push({ petId, petSlug, rec, sessionNo, sid, kind: "lung" });
+          if (wantHeart && recordingIsHeart(rec)) {
+            petItems.push({ petId, petSlug, rec, sessionNo, sid, kind: "heart" });
+          } else if (wantLung && recordingIsLung(rec)) {
+            petItems.push({ petId, petSlug, rec, sessionNo, sid, kind: "lung" });
           }
         }
       }
 
       done += 1;
       onProgress?.(Math.round((done / total) * 100), `Listing audio ${done}/${total} · ${petSlug}`);
+      return petItems;
+    });
+
+    return batches.flat();
+  }
+
+  async function resolveExportPets(client, cfg, filters, onProgress) {
+    if (Array.isArray(filters.cachedPets) && filters.cachedPets.length) {
+      onProgress?.(8, `Using ${filters.cachedPets.length} animal(s) from last scan`);
+      return filters.cachedPets;
+    }
+    const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
+    return resolvePetsForDateRange(client, filters.from, filters.to, allPets, filters.animalType || "all", onProgress);
+  }
+
+  async function listAudioItemsForExport(client, cfg, filters, kinds, logger, onProgress) {
+    const pets = await resolveExportPets(client, cfg, filters, (pct, label) => {
+      onProgress?.(2 + Math.round(pct * 0.08), label || "Loading animals…");
+    });
+
+    logger.log(`Collecting ${kinds.join(" / ")} sound files…`);
+    let items = await collectAudioRecordings(
+      client,
+      cfg,
+      pets,
+      filters.from,
+      filters.to,
+      kinds,
+      logger,
+      (pct, label) => onProgress?.(10 + Math.round(pct * 0.15), label || "Listing files…")
+    );
+
+    const expected = Number(filters.expectedCount) || 0;
+    if (!items.length && expected > 0) {
+      logger.warn?.("Retrying audio listing using full animal registry…");
+      const allPets = global.VetApiNormalize.normalizePets(await client.listPets()).filter((p) =>
+        matchesAnimalFilter(p, filters.animalType || "all")
+      );
+      items = await collectAudioRecordings(
+        client,
+        cfg,
+        allPets,
+        filters.from,
+        filters.to,
+        kinds,
+        logger,
+        (pct, label) => onProgress?.(10 + Math.round(pct * 0.15), label || "Retry listing…")
+      );
     }
 
     return items;
@@ -1148,25 +1222,17 @@
     if (!from || !to || from > to) throw new Error("Invalid date range.");
 
     onProgress?.(2, "Connecting…");
-    const { client, cfg } = await createReportClient(filters.deviceId);
-    const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
-    const pets = await resolvePetsForDateRange(client, from, to, allPets, filters.animalType || "all", (pct, label) => {
-      onProgress?.(2 + Math.round(pct * 0.08), label || "Loading animals…");
-    });
+    const { client, cfg } = await createReportClient(filters.deviceId, { timeoutMs: 90000 });
 
-    logger.log(`Collecting ${kind} sound files…`);
-    const items = await collectAudioRecordings(
-      client,
-      cfg,
-      pets,
-      from,
-      to,
-      [kind],
-      logger,
-      (pct, label) => onProgress?.(10 + Math.round(pct * 0.15), label || "Listing files…")
-    );
+    const items = await listAudioItemsForExport(client, cfg, filters, [kind], logger, onProgress);
 
-    if (!items.length) throw new Error(`No ${kind} sound files found in the selected range.`);
+    if (!items.length) {
+      const expected = Number(filters.expectedCount) || 0;
+      const hint = expected > 0
+        ? `Scan found ${expected} file(s) but the API failed while listing them. Wait 30 seconds and try again, or pick a shorter date range.`
+        : `No ${kind} sound files found in the selected range.`;
+      throw new Error(hint);
+    }
 
     const zip = new global.JSZip();
     const { saved, skipped } = await addAudioFilesToZip(
@@ -1232,21 +1298,14 @@
     }
 
     onProgress?.(42, "Collecting audio files…");
-    const { client, cfg } = await createReportClient(deviceId);
-    const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
-    const pets = await resolvePetsForDateRange(client, from, to, allPets, animalType, (pct, label) => {
-      onProgress?.(42 + Math.round(pct * 0.08), label || "Loading animals for audio…");
-    });
-
-    const audioItems = await collectAudioRecordings(
+    const { client, cfg } = await createReportClient(deviceId, { timeoutMs: 90000 });
+    const audioItems = await listAudioItemsForExport(
       client,
       cfg,
-      pets,
-      from,
-      to,
+      filters,
       ["heart", "lung"],
       logger,
-      (pct, label) => onProgress?.(50 + Math.round(pct * 0.1), label || "Listing audio…")
+      (pct, label) => onProgress?.(42 + Math.round(pct * 0.18), label || "Collecting audio…")
     );
 
     let audioSaved = 0;

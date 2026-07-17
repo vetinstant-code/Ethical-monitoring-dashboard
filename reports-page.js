@@ -25,6 +25,7 @@
   let _scanToken = 0;
   let _progressActive = false;
   let _lastCounts = null;
+  let _scanCache = null;
 
   const istFmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Kolkata",
@@ -459,6 +460,27 @@
     };
   }
 
+  function buildExportFilters(expectedCount) {
+    readFiltersFromState();
+    const from = state.from || todayIso();
+    const to = state.to || todayIso();
+    const deviceId = currentDeviceId();
+    const cacheOk = _scanCache
+      && _scanCache.from === from
+      && _scanCache.to === to
+      && _scanCache.animalType === (state.animalType || "all")
+      && _scanCache.deviceId === deviceId;
+    return {
+      from,
+      to,
+      animalType: state.animalType,
+      testType: state.testType,
+      deviceId,
+      cachedPets: cacheOk ? _scanCache.pets : null,
+      expectedCount,
+    };
+  }
+
   function formatCountBadge(kind, count) {
     if (count == null) return kind === "temperature" ? "— Records" : "— Files";
     if (kind === "temperature") return `${count} Record${count === 1 ? "" : "s"}`;
@@ -533,6 +555,14 @@
       progressDone(`Scan complete · ${counts.pets} animal(s) in range`);
       setStatusStrip("is-ready", `Ready · ${dateTriggerLabel()} · ${summaryFromCounts(counts)}`);
       _lastCounts = counts;
+      _scanCache = {
+        from,
+        to,
+        animalType: state.animalType || "all",
+        deviceId: currentDeviceId(),
+        pets: counts.resolvedPets || [],
+        counts,
+      };
       updateDownloadButtons(counts, false);
       return counts;
     } catch (err) {
@@ -544,6 +574,7 @@
       progressDone("Scan failed", true);
       setStatusStrip("is-error", err.message || "Scan failed");
       _lastCounts = null;
+      _scanCache = null;
       updateDownloadButtons(null, false);
       return null;
     }
@@ -740,13 +771,7 @@
     };
 
     const result = await global.VetExcelGenerator.exportAudioZip(
-      {
-        from,
-        to,
-        animalType: state.animalType,
-        testType: state.testType,
-        deviceId: currentDeviceId(),
-      },
+      buildExportFilters(kind === "heart" ? _lastCounts?.heart : _lastCounts?.lung),
       kind,
       logger,
       (pct, label) => progressUpdate(label || "Exporting audio…", Math.min(99, pct))
@@ -785,13 +810,7 @@
     };
 
     const result = await global.VetExcelGenerator.exportCompleteZip(
-      {
-        from,
-        to,
-        animalType: state.animalType,
-        testType: state.testType,
-        deviceId: currentDeviceId(),
-      },
+      buildExportFilters((_lastCounts?.temperature || 0) + (_lastCounts?.heart || 0) + (_lastCounts?.lung || 0)),
       logger,
       (pct, label) => progressUpdate(label || "Building complete ZIP…", Math.min(99, pct))
     );

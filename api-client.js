@@ -116,6 +116,14 @@
       });
     }
 
+    recordingsWithContext(petId, examSessionId, { baseUrl, deviceId } = {}) {
+      return this._request("GET", `/api/pets/${encodeURIComponent(petId)}/recordings`, {
+        params: { exam_session_id: examSessionId },
+        baseUrl,
+        deviceId,
+      });
+    }
+
     petTemperature(petId) {
       return this._request("GET", `/api/pets/${encodeURIComponent(petId)}/temperature`);
     }
