@@ -1896,11 +1896,15 @@ body.reports-mode .page-back-btn {
 }
 
 .reports-progress-block {
-  margin: 20px 0 4px;
+  margin: 0 0 20px;
   background: #f0f4ff;
   border: 1px solid #c7d7fd;
   border-radius: 10px;
   padding: 14px 18px 12px;
+}
+
+.reports-progress-block[hidden] {
+  display: none !important;
 }
 
 .reports-progress-header {

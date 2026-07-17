@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=39" />
+  <link rel="stylesheet" href="styles.css?v=40" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -506,6 +506,18 @@
             </div>
           </div>
 
+          <!-- Progress block (visible while scanning / downloading) -->
+          <div class="reports-progress-block" id="reports-progress-block" hidden>
+            <div class="reports-progress-header">
+              <span class="reports-progress-label" id="reports-progress-label">Working…</span>
+              <span class="reports-progress-pct" id="reports-progress-pct">0%</span>
+            </div>
+            <div class="reports-progress-track">
+              <div class="reports-progress-fill" id="reports-progress-fill" style="width:0%"></div>
+            </div>
+            <div class="reports-progress-log" id="reports-progress-log"></div>
+          </div>
+
           <!-- Download cards -->
           <div class="reports-cards-grid">
             <article class="reports-dl-card reports-dl-card--temp">
@@ -631,18 +643,6 @@
             </div>
           </article>
 
-          <!-- Progress block -->
-          <div class="reports-progress-block" id="reports-progress-block" hidden>
-            <div class="reports-progress-header">
-              <span class="reports-progress-label" id="reports-progress-label">Working…</span>
-              <span class="reports-progress-pct" id="reports-progress-pct">0%</span>
-            </div>
-            <div class="reports-progress-track">
-              <div class="reports-progress-fill" id="reports-progress-fill" style="width:0%"></div>
-            </div>
-            <div class="reports-progress-log" id="reports-progress-log"></div>
-          </div>
-
           <p class="reports-status" id="reports-status" hidden></p>
         </section>
       </div>
@@ -658,11 +658,11 @@
   <script src="auth.js?v=12"></script>
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=8"></script>
-  <script src="excel-generator.js?v=11"></script>
+  <script src="excel-generator.js?v=12"></script>
   <script src="dashboard-home.js?v=3"></script>
   <script src="live-api.js?v=28"></script>
   <script src="app-pages.js?v=8"></script>
-  <script src="reports-page.js?v=7"></script>
+  <script src="reports-page.js?v=9"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {

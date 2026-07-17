@@ -1,4 +1,5 @@
-const CACHE_NAME = "vetinstant-dashboard-v10";
+const CACHE_NAME = "vetinstant-dashboard-v12";
+
 const APP_SHELL_FILES = [
   "./",
   "./index.html",
@@ -26,8 +27,17 @@ const APP_SHELL_FILES = [
   "./assets/icons/risk-chronic.svg",
   "./assets/icons/risk-heat.svg",
   "./assets/icons/pwa-192.svg",
-  "./assets/icons/pwa-512.svg"
+  "./assets/icons/pwa-512.svg",
 ];
+
+function isNetworkFirst(url, request) {
+  return (
+    request.mode === "navigate" ||
+    url.pathname.endsWith(".html") ||
+    url.pathname.endsWith(".js") ||
+    url.pathname.endsWith(".css")
+  );
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -53,9 +63,18 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
-  if (url.pathname.endsWith(".js")) {
+
+  if (isNetworkFirst(url, event.request)) {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
+      fetch(event.request)
+        .then((networkResponse) => {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+          return networkResponse;
+        })
+        .catch(() =>
+          caches.match(event.request).then((cached) => cached || caches.match("./index.html"))
+        )
     );
     return;
   }
@@ -63,21 +82,11 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
-
-      return fetch(event.request)
-        .then((networkResponse) => {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
-          return networkResponse;
-        })
-        .catch(() => {
-          if (event.request.mode === "navigate") {
-            return caches.match("./index.html");
-          }
-          return undefined;
-        });
+      return fetch(event.request).then((networkResponse) => {
+        const responseClone = networkResponse.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone));
+        return networkResponse;
+      });
     })
   );
 });

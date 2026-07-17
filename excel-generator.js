@@ -743,7 +743,7 @@
     return [...petMap.values()];
   }
 
-  async function countReportInventory(filters, logger = { log() {} }) {
+  async function countReportInventory(filters, logger = { log() {} }, onProgress = null) {
     const from = filters.from;
     const to = filters.to;
     const animalType = filters.animalType || "all";
@@ -757,16 +757,22 @@
     }
 
     logger.log(`Counting report inventory ${from} → ${to} (animal=${animalType}, test=${testType})`);
+    onProgress?.(5, "Connecting to device…");
     const { client, cfg } = await createReportClient(filters.deviceId);
+    onProgress?.(12, "Loading animal list…");
     const allPets = global.VetApiNormalize.normalizePets(await client.listPets());
+    onProgress?.(18, "Resolving animals in date range…");
     const pets = await resolvePetsForDateRange(client, from, to, allPets, animalType);
+    logger.log(`Scanning ${pets.length} animal(s)…`);
 
     let temperature = 0;
     let heart = 0;
     let lung = 0;
     const days = enumerateDays(from, to);
+    const total = Math.max(pets.length, 1);
+    let done = 0;
 
-    await mapPool(pets, 4, async (pet) => {
+    await mapPool(pets, 6, async (pet) => {
       const petId = String(pet.pet_id || pet.id || "").trim();
       if (!petId) return;
 
@@ -778,6 +784,8 @@
           : sessionsResponse?.exam_sessions || [];
         uniqueSessions = dedupeSessions(sessions);
       } catch {
+        done += 1;
+        onProgress?.(18 + Math.round((done / total) * 80), `Scanned ${done}/${total} animals`);
         return;
       }
 
@@ -812,8 +820,16 @@
           }
         }
       }
+
+      done += 1;
+      const name = pet.pet_name || pet.name || petId;
+      onProgress?.(
+        18 + Math.round((done / total) * 80),
+        `Scanned ${done}/${total} · ${name}`
+      );
     });
 
+    onProgress?.(100, "Scan complete");
     return { temperature, heart, lung, pets: pets.length };
   }
 

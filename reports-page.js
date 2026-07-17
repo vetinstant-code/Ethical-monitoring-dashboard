@@ -43,7 +43,7 @@
   }
 
   function rangeLabel() {
-    if (state.quickRange === "all") return "All Data";
+    if (state.quickRange === "all") return "All Data (last 365 days)";
     if (!state.from || !state.to) return "—";
     if (state.from === state.to) return formatDisplay(state.from);
     return `${formatDisplay(state.from)} – ${formatDisplay(state.to)}`;
@@ -66,11 +66,33 @@
       state.from = addDaysIso(today, -29);
       state.to = today;
     } else if (key === "all") {
-      state.from = "2020-01-01";
+      state.from = addDaysIso(today, -364);
       state.to = today;
     }
     syncDateInputs();
     updateRangeLabels();
+  }
+
+  /** Single source of truth when Apply Filters / Download is clicked. */
+  function readFiltersFromUi() {
+    const activeChip = document.querySelector(".reports-chip.is-active");
+    const animalEl = document.getElementById("reports-animal-type");
+    const testEl = document.getElementById("reports-test-type");
+
+    if (activeChip?.dataset?.range) {
+      applyQuickRange(activeChip.dataset.range);
+    } else {
+      const fromEl = document.getElementById("reports-date-from");
+      const toEl = document.getElementById("reports-date-to");
+      state.from = fromEl?.value || state.from || todayIso();
+      state.to = toEl?.value || state.to || todayIso();
+      state.quickRange = "custom";
+      syncDateInputs();
+      updateRangeLabels();
+    }
+
+    state.animalType = animalEl?.value || "all";
+    state.testType = testEl?.value || "all";
   }
 
   function syncDateInputs() {
@@ -100,6 +122,8 @@
     if (!block) return;
     _progressActive = true;
     block.hidden = false;
+    block.removeAttribute("hidden");
+    block.scrollIntoView({ behavior: "smooth", block: "nearest" });
     if (labelEl) labelEl.textContent = label || "Working…";
     const clamped = Math.max(0, Math.min(100, Math.round(pct || 0)));
     if (pctEl) pctEl.textContent = `${clamped}%`;
@@ -135,12 +159,6 @@
       if (fill) fill.style.background = "#dc2626";
     }
     _progressActive = false;
-    setTimeout(() => {
-      const block = document.getElementById("reports-progress-block");
-      if (block) block.hidden = true;
-      const fill = document.getElementById("reports-progress-fill");
-      if (fill) fill.style.background = "";
-    }, isError ? 4000 : 2500);
   }
 
   function setStatus(msg, isError) {
@@ -287,7 +305,9 @@
         animalType: state.animalType,
         testType: state.testType,
         deviceId: currentDeviceId(),
-      }, logger, (pct, label) => progressUpdate(label || "Scanning…", 10 + pct * 0.85));
+      }, logger, (pct, label) => {
+        progressUpdate(label || "Scanning…", 10 + Math.round(pct * 0.85));
+      });
 
       progressUpdate("Done scanning", 100);
 
@@ -338,6 +358,7 @@
   }
 
   async function downloadTemperature() {
+    readFiltersFromUi();
     const from = state.from || todayIso();
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
@@ -418,6 +439,7 @@
   }
 
   async function downloadComplete() {
+    readFiltersFromUi();
     const from = state.from || todayIso();
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
@@ -482,6 +504,7 @@
         document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
         btn.classList.add("is-active");
         applyQuickRange(btn.dataset.range || "today");
+        updateRangeLabels();
       });
     });
 
@@ -506,15 +529,22 @@
     });
 
     document.getElementById("reports-apply-filters")?.addEventListener("click", async () => {
+      readFiltersFromUi();
       if (state.from && state.to && state.from > state.to) {
         setStatus("Start date must be on or before end date.", true);
         return;
       }
       applyFiltersToReports();
-      updateRangeLabels();
-      setStatus(`Scanning data for ${rangeLabel()}…`);
-      await refreshCounts();
-      setStatus(`Filters applied · ${rangeLabel()}`);
+      const applyBtn = document.getElementById("reports-apply-filters");
+      if (applyBtn) applyBtn.disabled = true;
+      try {
+        await refreshCounts();
+        setStatus(`Filters applied · ${rangeLabel()}`);
+      } catch (err) {
+        setStatus(err.message || String(err), true);
+      } finally {
+        if (applyBtn) applyBtn.disabled = false;
+      }
     });
 
     document.getElementById("reports-reset-filters")?.addEventListener("click", () => {
@@ -528,8 +558,13 @@
       state.testType = "all";
       applyQuickRange("today");
       applyFiltersToReports();
-      setStatus("Filters reset.");
-      refreshCounts();
+      setStatus("Filters reset to Today. Click Apply Filters to scan.");
+      const tempBadge = document.getElementById("reports-temp-count");
+      const heartBadge = document.getElementById("reports-heart-count");
+      const lungBadge = document.getElementById("reports-lung-count");
+      if (tempBadge) tempBadge.textContent = "— Records";
+      if (heartBadge) heartBadge.textContent = "— Files";
+      if (lungBadge) lungBadge.textContent = "— Files";
     });
 
     document.querySelectorAll("[data-download]").forEach((btn) => {
@@ -577,12 +612,14 @@
     }
     applyFiltersToReports();
     populateAnimalTypes();
-    refreshCounts();
     renderHistory();
+    setStatus("Set filters and click Apply Filters to scan data.");
   }
 
   function init() {
     applyQuickRange("today");
+    document.querySelectorAll(".reports-chip").forEach((b) => b.classList.remove("is-active"));
+    document.querySelector('.reports-chip[data-range="today"]')?.classList.add("is-active");
     applyFiltersToReports();
     bindUi();
     renderHistory();
