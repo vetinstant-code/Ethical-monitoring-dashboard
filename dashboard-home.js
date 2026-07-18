@@ -155,7 +155,6 @@
       return;
     }
     body.innerHTML = cases
-      .slice(0, 20)
       .map(
         (c) => `
       <tr class="activity-row-clickable" data-pet-id="${escapeHtml(c.id)}" tabindex="0" role="link">

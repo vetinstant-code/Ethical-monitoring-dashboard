@@ -387,7 +387,14 @@
     };
   }
 
-  async function resolvePetsForDate(client, targetDate, allPets, preFetchedDaily = undefined, gen = null) {
+  async function resolvePetsForDate(
+    client,
+    targetDate,
+    allPets,
+    preFetchedDaily = undefined,
+    gen = null,
+    supplementDaily = false
+  ) {
     let list = [];
     if (preFetchedDaily !== undefined) {
       list = (preFetchedDaily?.pets || []).map(dailyPetRowFrom);
@@ -395,27 +402,45 @@
       const dailyResponse = await client.dailyPets(targetDate).catch(() => null);
       list = (dailyResponse?.pets || []).map(dailyPetRowFrom);
     }
-    if (list.length) return { list, source: "daily-pets" };
+    if (list.length && !supplementDaily) return { list, source: "daily-pets" };
 
     const registered = (allPets || []).map(dailyPetRowFrom).filter((p) => p.pet_id || p.id);
-    if (!registered.length) return { list: [], source: "none" };
+    if (!registered.length) {
+      return { list, source: list.length ? "daily-pets" : "none" };
+    }
 
-    const hits = [];
-    await mapPool(registered, CONCURRENCY, async (pet) => {
+    const foundIds = new Set(list.map((p) => String(p.pet_id || p.id || "")).filter(Boolean));
+    const hits = list.slice();
+    const petsToScan = registered.filter(
+      (pet) => !foundIds.has(String(pet.pet_id || pet.id || ""))
+    );
+    await mapPool(petsToScan, CONCURRENCY, async (pet) => {
       if (gen != null && gen !== syncGeneration) return;
       const petId = pet.pet_id || pet.id;
       try {
-        const sessionsResponse = await client.examSessions(petId);
+        const [sessionsResponse, summaryResponse] = await Promise.all([
+          client.examSessions(petId).catch(() => null),
+          client.petTemperatureSummary(petId).catch(() => null),
+        ]);
         if (gen != null && gen !== syncGeneration) return;
         const sessions = global.VetApiNormalize.normalizeSessions(sessionsResponse);
-        const hasDate = sessions.some((s) => sessionStartedDateIst(s) === targetDate);
-        if (hasDate) hits.push(pet);
+        const summaries = normalizeSummaries(summaryResponse);
+        const hasSession = sessions.some((s) => sessionStartedDateIst(s) === targetDate);
+        const hasSummary = summaries.some((row) => summaryRecordedDateIst(row) === targetDate);
+        if (hasSession || hasSummary) hits.push(pet);
       } catch (err) {
-        console.warn(`Failed session scan for pet ${petId}`, err);
+        console.warn(`Failed session/temperature scan for pet ${petId}`, err);
       }
     });
     if (gen != null && gen !== syncGeneration) return { list: [], source: "aborted" };
-    return { list: hits, source: hits.length ? "exam-sessions" : "none" };
+    return {
+      list: hits,
+      source: hits.length
+        ? list.length
+          ? "daily-pets+scan"
+          : "exam-sessions-or-temperature"
+        : "none",
+    };
   }
 
   function petMetaOf(petId, pet, dailyPet) {
@@ -870,7 +895,9 @@
       if (gen !== syncGeneration) return;
 
       let resolved;
-      if ((dailyResp?.pets || []).length) {
+      const hasDailyPets = (dailyResp?.pets || []).length > 0;
+      const supplementToday = targetDate === todayIsoIst();
+      if (hasDailyPets && !supplementToday) {
         resolved = {
           list: dailyResp.pets.map(dailyPetRowFrom),
           source: "daily-pets",
@@ -884,12 +911,21 @@
           .catch(() => {});
         store.petMeta = {};
       } else {
-        setProgress(12, "Scanning exam sessions…");
+        setProgress(12, supplementToday
+          ? "Checking today’s sessions and temperatures…"
+          : "Scanning exam sessions and temperatures…");
         const rawPets = await client.listPets();
         if (gen !== syncGeneration) return;
         store.pets = global.VetApiNormalize.normalizePets(rawPets);
         store.petMeta = {};
-        resolved = await resolvePetsForDate(client, targetDate, store.pets, dailyResp, gen);
+        resolved = await resolvePetsForDate(
+          client,
+          targetDate,
+          store.pets,
+          dailyResp,
+          gen,
+          supplementToday
+        );
       }
       if (gen !== syncGeneration) return;
       if (resolved.source === "aborted") return;
