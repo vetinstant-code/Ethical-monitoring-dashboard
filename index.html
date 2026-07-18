@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=49" />
+  <link rel="stylesheet" href="styles.css?v=50" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -468,17 +468,58 @@
                   <button type="button" class="reports-dd-option" data-range="all">All saved data</button>
                   <div class="reports-dd-single">
                     <p class="reports-dd-custom-title">Single date</p>
-                    <input type="date" id="reports-single-date" aria-label="Select a single date" />
+                    <input type="hidden" id="reports-single-date" />
+                    <button type="button" class="reports-date-field" id="reports-single-date-picker" data-calendar-target="single" aria-label="Select a single date">
+                      <span id="reports-single-date-label">Select date</span>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                      </svg>
+                    </button>
                     <button type="button" class="reports-dd-custom-apply" id="reports-single-date-apply">Use this date</button>
                   </div>
                   <div class="reports-dd-custom">
                     <p class="reports-dd-custom-title">Custom range</p>
                     <div class="reports-dd-custom-dates">
-                      <input type="date" id="reports-date-from" aria-label="From date" />
+                      <input type="hidden" id="reports-date-from" />
+                      <button type="button" class="reports-date-field" data-calendar-target="from" aria-label="Select start date">
+                        <span id="reports-date-from-label">Start date</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                          <line x1="16" y1="2" x2="16" y2="6"></line>
+                          <line x1="8" y1="2" x2="8" y2="6"></line>
+                          <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                      </button>
                       <span class="reports-date-to-label">to</span>
-                      <input type="date" id="reports-date-to" aria-label="To date" />
+                      <input type="hidden" id="reports-date-to" />
+                      <button type="button" class="reports-date-field" data-calendar-target="to" aria-label="Select end date">
+                        <span id="reports-date-to-label">End date</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                          <line x1="16" y1="2" x2="16" y2="6"></line>
+                          <line x1="8" y1="2" x2="8" y2="6"></line>
+                          <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                      </button>
                     </div>
                     <button type="button" class="reports-dd-custom-apply" id="reports-custom-range-apply">Use this range</button>
+                  </div>
+                  <div class="reports-cal-popover" id="reports-cal-popover" hidden role="dialog" aria-label="Pick date">
+                    <div class="dash-cal-head">
+                      <button type="button" class="dash-cal-nav" id="reports-cal-prev" aria-label="Previous month">‹</button>
+                      <strong class="dash-cal-title" id="reports-cal-title">July 2026</strong>
+                      <button type="button" class="dash-cal-nav" id="reports-cal-next" aria-label="Next month">›</button>
+                    </div>
+                    <div class="dash-cal-dows" aria-hidden="true">
+                      <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+                    </div>
+                    <div class="dash-cal-grid" id="reports-cal-grid"></div>
+                    <div class="dash-cal-footer">
+                      <button type="button" class="dash-cal-today" id="reports-cal-today">Today</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -696,12 +737,12 @@
   <script src="dashboard-home.js?v=8"></script>
   <script src="live-api.js?v=37"></script>
   <script src="app-pages.js?v=10"></script>
-  <script src="reports-page.js?v=21"></script>
+  <script src="reports-page.js?v=22"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=39").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=40").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

@@ -36,11 +36,18 @@
   let _lastCounts = null;
   let _scanCache = null;
   let _activeDeviceId = null;
+  let _calendarTarget = null;
+  let _calendarYear = null;
+  let _calendarMonth = null;
 
   const istFmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Kolkata",
     day: "2-digit",
     month: "short",
+    year: "numeric",
+  });
+  const monthTitleFmt = new Intl.DateTimeFormat("en-GB", {
+    month: "long",
     year: "numeric",
   });
 
@@ -65,6 +72,106 @@
     } catch {
       return iso;
     }
+  }
+
+  function parseIsoDate(iso) {
+    const match = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return new Date(`${todayIso()}T12:00:00`);
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+
+  function calendarIso(year, month, day) {
+    return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  function selectedCalendarDate() {
+    if (_calendarTarget === "single") {
+      return document.getElementById("reports-single-date")?.value || state.from || todayIso();
+    }
+    if (_calendarTarget === "to") {
+      return document.getElementById("reports-date-to")?.value || state.to || todayIso();
+    }
+    return document.getElementById("reports-date-from")?.value || state.from || todayIso();
+  }
+
+  function renderReportCalendar() {
+    const grid = document.getElementById("reports-cal-grid");
+    const title = document.getElementById("reports-cal-title");
+    if (!grid) return;
+
+    if (_calendarYear == null || _calendarMonth == null) {
+      const selected = parseIsoDate(selectedCalendarDate());
+      _calendarYear = selected.getFullYear();
+      _calendarMonth = selected.getMonth();
+    }
+
+    if (title) title.textContent = monthTitleFmt.format(new Date(_calendarYear, _calendarMonth, 1));
+    const first = new Date(_calendarYear, _calendarMonth, 1);
+    let startDow = first.getDay();
+    startDow = startDow === 0 ? 6 : startDow - 1;
+    const daysInMonth = new Date(_calendarYear, _calendarMonth + 1, 0).getDate();
+    const selected = selectedCalendarDate();
+    const today = todayIso();
+    const cells = [];
+
+    for (let i = 0; i < startDow; i++) {
+      cells.push('<span class="dash-cal-day is-empty"></span>');
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const iso = calendarIso(_calendarYear, _calendarMonth, day);
+      const classes = [
+        "dash-cal-day",
+        iso === selected ? "is-selected" : "",
+        iso === today ? "is-today" : "",
+      ].filter(Boolean).join(" ");
+      cells.push(`<button type="button" class="${classes}" data-report-date="${iso}">${day}</button>`);
+    }
+    grid.innerHTML = cells.join("");
+  }
+
+  function openReportCalendar(target) {
+    _calendarTarget = target;
+    const selected = parseIsoDate(selectedCalendarDate());
+    _calendarYear = selected.getFullYear();
+    _calendarMonth = selected.getMonth();
+    const popover = document.getElementById("reports-cal-popover");
+    if (popover) popover.hidden = false;
+    document.querySelectorAll(".reports-date-field").forEach((field) => {
+      field.classList.toggle("is-open", field.dataset.calendarTarget === target);
+    });
+    renderReportCalendar();
+  }
+
+  function closeReportCalendar() {
+    const popover = document.getElementById("reports-cal-popover");
+    if (popover) popover.hidden = true;
+    document.querySelectorAll(".reports-date-field").forEach((field) => field.classList.remove("is-open"));
+    _calendarTarget = null;
+  }
+
+  function chooseReportCalendarDate(iso) {
+    if (!iso || !_calendarTarget) return;
+    if (_calendarTarget === "single") {
+      const input = document.getElementById("reports-single-date");
+      if (input) input.value = iso;
+      state.from = iso;
+      state.to = iso;
+      state.quickRange = "single";
+    } else if (_calendarTarget === "from") {
+      const input = document.getElementById("reports-date-from");
+      if (input) input.value = iso;
+      state.from = iso;
+      state.quickRange = "custom";
+    } else {
+      const input = document.getElementById("reports-date-to");
+      if (input) input.value = iso;
+      state.to = iso;
+      state.quickRange = "custom";
+    }
+    syncDateInputs();
+    updateRangeLabels();
+    updateDateDropdownUi();
+    closeReportCalendar();
   }
 
   function dayCount(from, to) {
@@ -234,9 +341,18 @@
     const fromEl = document.getElementById("reports-date-from");
     const toEl = document.getElementById("reports-date-to");
     const singleEl = document.getElementById("reports-single-date");
+    const fromLabel = document.getElementById("reports-date-from-label");
+    const toLabel = document.getElementById("reports-date-to-label");
+    const singleLabel = document.getElementById("reports-single-date-label");
     if (fromEl) fromEl.value = state.from || "";
     if (toEl) toEl.value = state.to || "";
     if (singleEl) singleEl.value = state.from === state.to ? state.from || "" : "";
+    if (fromLabel) fromLabel.textContent = state.from ? formatDisplay(state.from) : "Start date";
+    if (toLabel) toLabel.textContent = state.to ? formatDisplay(state.to) : "End date";
+    if (singleLabel) {
+      singleLabel.textContent =
+        state.from === state.to && state.from ? formatDisplay(state.from) : "Select date";
+    }
     _syncingDates = false;
   }
 
@@ -956,6 +1072,7 @@
   function closeReportsDropdown(ddId) {
     const dd = document.getElementById(ddId);
     if (!dd) return;
+    if (ddId === "reports-dd-date") closeReportCalendar();
     const panel = dd.querySelector(".reports-dd-panel");
     const trigger = dd.querySelector(".reports-dd-trigger");
     dd.classList.remove("is-open");
@@ -978,6 +1095,7 @@
   }
 
   function closeDateDropdown() {
+    closeReportCalendar();
     closeReportsDropdown("reports-dd-date");
   }
 
@@ -1005,35 +1123,48 @@
       applySingleDateFromInput();
     });
 
-    document.getElementById("reports-single-date")?.addEventListener("change", (e) => {
-      if (_syncingDates) return;
-      const selectedDate = e.target.value;
-      if (!selectedDate) return;
-      state.from = selectedDate;
-      state.to = selectedDate;
-      state.quickRange = "single";
-      document.querySelectorAll(".reports-dd-option[data-range]").forEach((b) => b.classList.remove("is-active"));
-      document.querySelector(".reports-dd-custom")?.classList.remove("is-active");
-      document.querySelector(".reports-dd-single")?.classList.add("is-active");
-      updateDateDropdownUi();
+    document.querySelectorAll(".reports-date-field[data-calendar-target]").forEach((field) => {
+      field.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const target = field.dataset.calendarTarget;
+        if (_calendarTarget === target && !document.getElementById("reports-cal-popover")?.hidden) {
+          closeReportCalendar();
+        } else {
+          openReportCalendar(target);
+        }
+      });
     });
 
-    document.getElementById("reports-date-from")?.addEventListener("change", (e) => {
-      if (_syncingDates) return;
-      state.from = e.target.value;
-      state.quickRange = "custom";
-      document.querySelectorAll(".reports-dd-option[data-range]").forEach((b) => b.classList.remove("is-active"));
-      document.querySelector(".reports-dd-custom")?.classList.add("is-active");
-      updateDateDropdownUi();
+    document.getElementById("reports-cal-prev")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      _calendarMonth -= 1;
+      if (_calendarMonth < 0) {
+        _calendarMonth = 11;
+        _calendarYear -= 1;
+      }
+      renderReportCalendar();
     });
 
-    document.getElementById("reports-date-to")?.addEventListener("change", (e) => {
-      if (_syncingDates) return;
-      state.to = e.target.value;
-      state.quickRange = "custom";
-      document.querySelectorAll(".reports-dd-option[data-range]").forEach((b) => b.classList.remove("is-active"));
-      document.querySelector(".reports-dd-custom")?.classList.add("is-active");
-      updateDateDropdownUi();
+    document.getElementById("reports-cal-next")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      _calendarMonth += 1;
+      if (_calendarMonth > 11) {
+        _calendarMonth = 0;
+        _calendarYear += 1;
+      }
+      renderReportCalendar();
+    });
+
+    document.getElementById("reports-cal-today")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      chooseReportCalendarDate(todayIso());
+    });
+
+    document.getElementById("reports-cal-grid")?.addEventListener("click", (e) => {
+      const button = e.target.closest("[data-report-date]");
+      if (!button) return;
+      e.stopPropagation();
+      chooseReportCalendarDate(button.dataset.reportDate);
     });
 
     document.getElementById("reports-animal-trigger")?.addEventListener("click", (e) => {

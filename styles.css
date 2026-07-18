@@ -1517,6 +1517,11 @@ body.reports-mode .page-back-btn {
   display: none !important;
 }
 
+#reports-date-panel {
+  width: 300px;
+  overflow: visible;
+}
+
 .reports-dd-option {
   appearance: none;
   border: 0;
@@ -1570,23 +1575,82 @@ body.reports-mode .page-back-btn {
   gap: 8px;
 }
 
-.reports-dd-single input[type="date"],
-.reports-dd-custom-dates input[type="date"] {
+.reports-date-field {
+  appearance: none;
   flex: 1;
   min-width: 0;
   height: 36px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 0 8px;
+  padding: 0 9px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-main);
   background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.reports-dd-single input[type="date"] {
+.reports-date-field:hover,
+.reports-date-field.is-open {
+  border-color: #60a5fa;
+}
+
+.reports-date-field.is-open {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.reports-date-field span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reports-date-field svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.reports-dd-single .reports-date-field {
   width: 100%;
+}
+
+.reports-cal-popover {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 8px);
+  z-index: 95;
+  width: 292px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16), 0 3px 8px rgba(15, 23, 42, 0.08);
+}
+
+.reports-cal-popover[hidden] {
+  display: none !important;
+}
+
+.reports-cal-popover .dash-cal-grid {
+  min-height: 216px;
+}
+
+@media (max-width: 760px) {
+  .reports-cal-popover {
+    position: static;
+    width: 100%;
+    margin-top: 6px;
+    box-shadow: none;
+  }
 }
 
 .reports-dd-custom-apply {
