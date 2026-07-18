@@ -1542,12 +1542,14 @@ body.reports-mode .page-back-btn {
   font-weight: 600;
 }
 
+.reports-dd-single,
 .reports-dd-custom {
   margin-top: 4px;
   padding: 10px 12px 8px;
   border-top: 1px solid #e2e8f0;
 }
 
+.reports-dd-single.is-active,
 .reports-dd-custom.is-active {
   background: #f8fafc;
   border-radius: 10px;
@@ -1568,6 +1570,7 @@ body.reports-mode .page-back-btn {
   gap: 8px;
 }
 
+.reports-dd-single input[type="date"],
 .reports-dd-custom-dates input[type="date"] {
   flex: 1;
   min-width: 0;
@@ -1580,6 +1583,10 @@ body.reports-mode .page-back-btn {
   font-weight: 600;
   color: var(--text-main);
   background: #fff;
+}
+
+.reports-dd-single input[type="date"] {
+  width: 100%;
 }
 
 .reports-dd-custom-apply {

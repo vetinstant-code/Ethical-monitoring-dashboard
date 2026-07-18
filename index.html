@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=48" />
+  <link rel="stylesheet" href="styles.css?v=49" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -466,6 +466,11 @@
                   <button type="button" class="reports-dd-option" data-range="last7">Last 7 Days</button>
                   <button type="button" class="reports-dd-option" data-range="last30">Last 30 Days</button>
                   <button type="button" class="reports-dd-option" data-range="all">All saved data</button>
+                  <div class="reports-dd-single">
+                    <p class="reports-dd-custom-title">Single date</p>
+                    <input type="date" id="reports-single-date" aria-label="Select a single date" />
+                    <button type="button" class="reports-dd-custom-apply" id="reports-single-date-apply">Use this date</button>
+                  </div>
                   <div class="reports-dd-custom">
                     <p class="reports-dd-custom-title">Custom range</p>
                     <div class="reports-dd-custom-dates">
@@ -691,12 +696,12 @@
   <script src="dashboard-home.js?v=8"></script>
   <script src="live-api.js?v=37"></script>
   <script src="app-pages.js?v=10"></script>
-  <script src="reports-page.js?v=20"></script>
+  <script src="reports-page.js?v=21"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=38").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=39").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

@@ -10,6 +10,7 @@
     last7: "Last 7 Days",
     last30: "Last 30 Days",
     all: "All saved data",
+    single: "Single date",
     custom: "Custom range",
   };
 
@@ -232,8 +233,10 @@
     _syncingDates = true;
     const fromEl = document.getElementById("reports-date-from");
     const toEl = document.getElementById("reports-date-to");
+    const singleEl = document.getElementById("reports-single-date");
     if (fromEl) fromEl.value = state.from || "";
     if (toEl) toEl.value = state.to || "";
+    if (singleEl) singleEl.value = state.from === state.to ? state.from || "" : "";
     _syncingDates = false;
   }
 
@@ -247,6 +250,8 @@
 
     const customBlock = document.querySelector(".reports-dd-custom");
     if (customBlock) customBlock.classList.toggle("is-active", state.quickRange === "custom");
+    const singleBlock = document.querySelector(".reports-dd-single");
+    if (singleBlock) singleBlock.classList.toggle("is-active", state.quickRange === "single");
   }
 
   function validateDateRange() {
@@ -708,6 +713,19 @@
     applyAndScan();
   }
 
+  function applySingleDateFromInput() {
+    const singleEl = document.getElementById("reports-single-date");
+    const selectedDate = singleEl?.value || todayIso();
+    state.from = selectedDate;
+    state.to = selectedDate;
+    state.quickRange = "single";
+    syncDateInputs();
+    updateRangeLabels();
+    updateDateDropdownUi();
+    closeDateDropdown();
+    applyAndScan();
+  }
+
   function selectPresetRange(key) {
     applyQuickRange(key);
     closeDateDropdown();
@@ -981,6 +999,23 @@
 
     document.getElementById("reports-custom-range-apply")?.addEventListener("click", () => {
       applyCustomRangeFromInputs();
+    });
+
+    document.getElementById("reports-single-date-apply")?.addEventListener("click", () => {
+      applySingleDateFromInput();
+    });
+
+    document.getElementById("reports-single-date")?.addEventListener("change", (e) => {
+      if (_syncingDates) return;
+      const selectedDate = e.target.value;
+      if (!selectedDate) return;
+      state.from = selectedDate;
+      state.to = selectedDate;
+      state.quickRange = "single";
+      document.querySelectorAll(".reports-dd-option[data-range]").forEach((b) => b.classList.remove("is-active"));
+      document.querySelector(".reports-dd-custom")?.classList.remove("is-active");
+      document.querySelector(".reports-dd-single")?.classList.add("is-active");
+      updateDateDropdownUi();
     });
 
     document.getElementById("reports-date-from")?.addEventListener("change", (e) => {
