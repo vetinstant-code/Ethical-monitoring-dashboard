@@ -767,7 +767,7 @@
     const to = state.to || todayIso();
     if (from > to) throw new Error("Start date must be on or before end date.");
 
-    if (!global.VetExcelGenerator?.compileDailySummary) {
+    if (!global.VetExcelGenerator?.compileRangeSummary) {
       throw new Error("Excel report generator unavailable.");
     }
 
@@ -787,42 +787,28 @@
     progressShow(`Preparing Excel for ${days.length} day(s)…`, 0);
     progressLog(`Range: ${rangeLabel()} · ${days.length} day(s)`);
 
-    let totalRows = 0;
-    let daysWritten = 0;
-    let daysSkipped = 0;
-    let daysFailed = 0;
-
-    for (let i = 0; i < days.length; i++) {
-      const day = days[i];
-      const pct = Math.round(((i) / days.length) * 90);
-      progressUpdate(`Building Excel — ${formatDisplay(day)} (${i + 1}/${days.length})`, pct);
-      progressLog(`Fetching data for ${formatDisplay(day)}…`);
-
-      const logger = {
-        log: (msg) => progressLog(msg),
-        warn: (msg) => progressLog(msg),
-        error: console.error,
-        success: (msg) => progressLog(msg, "done"),
-      };
-
-      try {
-        const result = await global.VetExcelGenerator.compileDailySummary(day, currentDeviceId(), logger, {
-          animalType: state.animalType,
-        });
-        const rows = Number(result?.rows_written) || 0;
-        if (rows > 0) {
-          totalRows += rows;
-          daysWritten += 1;
-          progressLog(`${formatDisplay(day)}: ${rows} row(s) written`, "done");
-        } else {
-          daysSkipped += 1;
-          progressLog(`${formatDisplay(day)}: no pets / no rows — skipped`);
-        }
-      } catch (err) {
-        daysFailed += 1;
-        progressLog(`${formatDisplay(day)}: ${err.message || err}`, "error");
+    const logger = {
+      log: (msg) => progressLog(msg),
+      warn: (msg) => progressLog(msg),
+      error: console.error,
+      success: (msg) => progressLog(msg, "done"),
+    };
+    const result = await global.VetExcelGenerator.compileRangeSummary(
+      from,
+      to,
+      currentDeviceId(),
+      logger,
+      {
+        animalType: state.animalType,
+        days,
+        onProgress: (pct, label) =>
+          progressUpdate(label || "Building consolidated Excel…", Math.min(99, pct)),
       }
-    }
+    );
+    const totalRows = Number(result?.rows_written) || 0;
+    const daysWritten = Number(result?.days_written) || 0;
+    const daysSkipped = Number(result?.days_skipped) || 0;
+    const daysFailed = Number(result?.days_failed) || 0;
 
     if (!totalRows) {
       throw new Error(
@@ -832,7 +818,7 @@
       );
     }
 
-    progressUpdate("Saving Excel file…", 96);
+    progressUpdate("Saving consolidated Excel file…", 96);
     progressLog(
       `Done · ${daysWritten} day(s) with data · ${daysSkipped} skipped · ${daysFailed} failed`,
       "done"
@@ -848,10 +834,10 @@
       actionHtml: '<span class="reports-hist-done">Downloaded</span>',
     });
     progressDone(
-      `Excel downloaded · ${totalRows} row(s) · ${daysWritten} day(s) · ${rangeLabel()}`
+      `One Excel downloaded · ${totalRows} row(s) · ${daysWritten} day(s) · ${rangeLabel()}`
     );
     setStatus(
-      `Temperature Excel downloaded · ${totalRows} row${totalRows === 1 ? "" : "s"} · ${daysWritten} day(s) with data` +
+      `Consolidated temperature Excel downloaded · ${totalRows} row${totalRows === 1 ? "" : "s"} · ${daysWritten} day(s) with data` +
         (daysSkipped ? ` · ${daysSkipped} empty day(s) skipped` : "") +
         (daysFailed ? ` · ${daysFailed} day(s) failed` : "")
     );
@@ -930,11 +916,11 @@
       actionHtml: '<span class="reports-hist-done">Downloaded</span>',
     });
     progressDone(
-      `Complete ZIP downloaded · ${result.tempFiles} Excel · ${result.audioSaved} audio file(s)` +
+      `Complete ZIP downloaded · ${result.tempFiles ? "1 consolidated Excel" : "no Excel"} · ${result.audioSaved} audio file(s)` +
         (result.audioError ? " · audio partial" : "")
     );
     setStatus(
-      `Complete export downloaded · ${result.tempFiles} temperature file(s), ${result.audioSaved} audio file(s) · ${rangeLabel()}`
+      `Complete export downloaded · ${result.tempFiles ? "1 consolidated temperature Excel" : "no temperature Excel"}, ${result.audioSaved} audio file(s) · ${rangeLabel()}`
     );
   }
 

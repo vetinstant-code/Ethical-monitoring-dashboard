@@ -1440,6 +1440,154 @@
     });
   }
 
+  function cloneExcelValue(value, rowOffset = 0) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || !value.formula) {
+      return value;
+    }
+    const formula = String(value.formula).replace(
+      /(\$?[A-Z]{1,3})(\$?)(\d+)/g,
+      (_, col, absoluteRow, row) =>
+        `${col}${absoluteRow}${Math.max(1, Number(row) + rowOffset)}`
+    );
+    return { ...value, formula };
+  }
+
+  function copyWorksheetRow(sourceSheet, sourceRowNumber, targetSheet, targetRowNumber) {
+    const sourceRow = sourceSheet.getRow(sourceRowNumber);
+    const targetRow = targetSheet.getRow(targetRowNumber);
+    const rowOffset = targetRowNumber - sourceRowNumber;
+
+    sourceRow.eachCell({ includeEmpty: true }, (sourceCell, columnNumber) => {
+      const targetCell = targetRow.getCell(columnNumber);
+      targetCell.value = cloneExcelValue(sourceCell.value, rowOffset);
+      if (sourceCell.style) targetCell.style = { ...sourceCell.style };
+      if (sourceCell.numFmt) targetCell.numFmt = sourceCell.numFmt;
+      if (sourceCell.alignment) targetCell.alignment = { ...sourceCell.alignment };
+      if (sourceCell.border) targetCell.border = { ...sourceCell.border };
+      if (sourceCell.fill) targetCell.fill = { ...sourceCell.fill };
+      if (sourceCell.font) targetCell.font = { ...sourceCell.font };
+      if (sourceCell.protection) targetCell.protection = { ...sourceCell.protection };
+    });
+    targetRow.height = sourceRow.height;
+    targetRow.hidden = sourceRow.hidden;
+    targetRow.commit?.();
+  }
+
+  async function appendDailyWorkbook(targetWorkbook, dailyBuffer, rowsWritten, isFirst) {
+    const dailyWorkbook = new ExcelJS.Workbook();
+    await dailyWorkbook.xlsx.load(dailyBuffer);
+
+    if (isFirst) {
+      return dailyWorkbook;
+    }
+
+    const sourceSummary = dailyWorkbook.worksheets[0];
+    const targetSummary = targetWorkbook.worksheets[0];
+    const firstTargetRow = Math.max(3, targetSummary.actualRowCount + 1);
+
+    for (let i = 0; i < rowsWritten; i++) {
+      const targetRowNumber = firstTargetRow + i;
+      copyWorksheetRow(sourceSummary, 3 + i, targetSummary, targetRowNumber);
+      targetSummary.getCell(targetRowNumber, 1).value = targetRowNumber - 2;
+    }
+
+    for (const sheetName of ["FetchedPets", "SkippedPets", "SessionDiagnostics"]) {
+      const sourceSheet = dailyWorkbook.getWorksheet(sheetName);
+      if (!sourceSheet) continue;
+      let targetSheet = targetWorkbook.getWorksheet(sheetName);
+      if (!targetSheet) {
+        targetSheet = targetWorkbook.addWorksheet(sheetName);
+        copyWorksheetRow(sourceSheet, 1, targetSheet, 1);
+      }
+      let targetRowNumber = Math.max(2, targetSheet.actualRowCount + 1);
+      for (let sourceRowNumber = 2; sourceRowNumber <= sourceSheet.actualRowCount; sourceRowNumber++) {
+        if (!sourceSheet.getRow(sourceRowNumber).hasValues) continue;
+        copyWorksheetRow(sourceSheet, sourceRowNumber, targetSheet, targetRowNumber++);
+      }
+    }
+
+    return targetWorkbook;
+  }
+
+  async function compileRangeSummary(from, to, deviceId, logger = { log() {} }, options = {}) {
+    if (!from || !to || from > to) throw new Error("Invalid date range.");
+    const days = Array.isArray(options.days) && options.days.length
+      ? options.days
+      : enumerateDays(from, to);
+    const animalType = options.animalType || "all";
+    let workbook = null;
+    let totalRows = 0;
+    let daysWritten = 0;
+    let daysSkipped = 0;
+    let daysFailed = 0;
+
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i];
+      options.onProgress?.(
+        Math.round((i / Math.max(days.length, 1)) * 90),
+        `Building Excel — ${day} (${i + 1}/${days.length})`
+      );
+      try {
+        const result = await fetchWithRetry(
+          () => compileDailySummary(day, deviceId, logger, { animalType, download: false }),
+          2,
+          1500
+        );
+        const rows = Number(result?.rows_written) || 0;
+        if (rows > 0 && result.buffer) {
+          workbook = await appendDailyWorkbook(workbook, result.buffer, rows, !workbook);
+          totalRows += rows;
+          daysWritten += 1;
+          logger.log?.(`${day}: ${rows} row(s) added to consolidated workbook`, "done");
+        } else {
+          daysSkipped += 1;
+          logger.log?.(`${day}: no rows — skipped`);
+        }
+      } catch (err) {
+        daysFailed += 1;
+        logger.warn?.(`${day}: ${err.message || err}`);
+      }
+      if (i < days.length - 1) await sleep(250);
+    }
+
+    if (!workbook || !totalRows) {
+      return {
+        rows_written: 0,
+        days_written: daysWritten,
+        days_skipped: daysSkipped,
+        days_failed: daysFailed,
+        buffer: null,
+        filename: null,
+      };
+    }
+
+    options.onProgress?.(94, "Writing consolidated workbook…");
+    workbook.creator = "VetInstant Ethical Monitoring Dashboard";
+    workbook.modified = new Date();
+    const outputBuffer = await workbook.xlsx.writeBuffer();
+    const stamp = new Date().toTimeString().slice(0, 8).replace(/:/g, "-");
+    const filename = `temperature_summary_${from.replace(/-/g, "")}_${to.replace(/-/g, "")}_${stamp}.xlsx`;
+
+    if (options.download !== false) {
+      triggerBlobDownload(
+        new Blob([outputBuffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+        filename
+      );
+    }
+
+    options.onProgress?.(100, "Download started");
+    return {
+      rows_written: totalRows,
+      days_written: daysWritten,
+      days_skipped: daysSkipped,
+      days_failed: daysFailed,
+      buffer: outputBuffer,
+      filename,
+    };
+  }
+
   async function exportAudioZip(filters, kind, logger = { log() {} }, onProgress = null) {
     if (!global.JSZip) throw new Error("ZIP library not loaded.");
     const from = filters.from;
@@ -1501,33 +1649,24 @@
 
     onProgress?.(2, "Preparing complete export…");
     logger.log(`Export range: ${from} → ${to} (${allDays.length} day(s) total)`);
-    logger.log(`Building temperature Excel for ${tempDays.length} day(s) with data…`);
+    logger.log(`Building one consolidated temperature Excel for ${tempDays.length} day(s) with data…`);
 
-    for (let i = 0; i < tempDays.length; i++) {
-      const day = tempDays[i];
-      const pct = 2 + Math.round((i / Math.max(tempDays.length, 1)) * 38);
-      onProgress?.(pct, `Temperature Excel ${i + 1}/${tempDays.length} · ${day}`);
-      logger.log(`Building Excel for ${day}…`);
-      try {
-        const result = await fetchWithRetry(
-          () => compileDailySummary(day, deviceId, logger, { animalType, download: false }),
-          2,
-          1500
-        );
-        const rows = Number(result?.rows_written) || 0;
-        if (rows > 0 && result.buffer) {
-          zip.file(`temperature/${result.filename}`, result.buffer);
-          tempFiles += 1;
-          tempRows += rows;
-          logger.log(`${day}: ${rows} row(s) added to ZIP`, "done");
-        } else {
-          logger.log(`${day}: no rows — skipped`);
-        }
-      } catch (err) {
-        tempErrors += 1;
-        logger.warn?.(`${day}: ${err.message || err}`);
-      }
-      if (i < tempDays.length - 1) await sleep(250);
+    const temperatureResult = await compileRangeSummary(from, to, deviceId, logger, {
+      animalType,
+      days: tempDays,
+      download: false,
+      onProgress: (pct, label) =>
+        onProgress?.(2 + Math.round(pct * 0.38), label || "Building consolidated Excel…"),
+    });
+    tempRows = Number(temperatureResult?.rows_written) || 0;
+    tempErrors = Number(temperatureResult?.days_failed) || 0;
+    if (tempRows > 0 && temperatureResult.buffer) {
+      zip.file(`temperature/${temperatureResult.filename}`, temperatureResult.buffer);
+      tempFiles = 1;
+      logger.log(
+        `${tempRows} row(s) from ${temperatureResult.days_written} day(s) added as one Excel`,
+        "done"
+      );
     }
 
     onProgress?.(42, "Collecting audio files…");
@@ -1579,7 +1718,7 @@
       [
         `Device: ${deviceId}`,
         `Range: ${from} → ${to}`,
-        `Temperature files: ${tempFiles} (${tempRows} rows, ${tempErrors} day(s) failed)`,
+        `Temperature workbook: ${tempFiles ? "1 consolidated Excel" : "none"} (${tempRows} rows, ${tempErrors} day(s) failed)`,
         `Audio files: ${audioSaved} (${audioSkipped} skipped)`,
         audioError ? `Audio note: ${audioError}` : "",
         `Generated: ${new Date().toISOString()}`,
@@ -2328,6 +2467,7 @@
   // Bind to window context
   global.VetExcelGenerator = {
     compileDailySummary,
+    compileRangeSummary,
     countReportInventory,
     createReportClient,
     discoverSavedDataRange,
