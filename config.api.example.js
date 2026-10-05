@@ -6,7 +6,7 @@ window.API_CONFIG = {
   /** Public HTTPS URL (nginx → uvicorn on EC2), not raw :8000 HTTP IP */
   baseUrl: "https://api.yourdomain.com",
   deviceId: "Bruno",
-  allowedDevices: ["ARMY", "BRUNO", "ARCHIT", "ZARA"],
+  allowedDevices: ["ARMY", "BRUNO", "ARCHIT", "ZARA", "ROCKY"],
   password: "YOUR_DEVICE_PASSWORD",
   timeoutMs: 25000,
 };

@@ -507,16 +507,24 @@
   async function ensureClient() {
     const session = global.VetAuth?.getSession?.() || {};
     const wantedDeviceId = expectedDeviceId();
-    if (!wantedDeviceId || !session.password) {
+    if (!wantedDeviceId || !session.sessionToken) {
       throw new Error("Not signed in.");
     }
 
-    if (store.apiClient && clientMatchesDevice(store.apiClient, wantedDeviceId)) {
+    if (
+      store.apiClient &&
+      clientMatchesDevice(store.apiClient, wantedDeviceId) &&
+      store.apiClient.sessionToken === session.sessionToken
+    ) {
       return store.apiClient;
     }
 
     const sharedClient = global.__vetApiClient;
-    if (sharedClient && clientMatchesDevice(sharedClient, wantedDeviceId)) {
+    if (
+      sharedClient &&
+      clientMatchesDevice(sharedClient, wantedDeviceId) &&
+      sharedClient.sessionToken === session.sessionToken
+    ) {
       setApiClient(sharedClient);
       return sharedClient;
     }
@@ -524,10 +532,11 @@
     const cfg = {
       baseUrl: global.API_CONFIG?.baseUrl || "https://wick-vehicular-dingy.ngrok-free.dev",
       deviceId: wantedDeviceId,
+      sessionToken: session.sessionToken,
       timeoutMs: global.API_CONFIG?.timeoutMs || 25000,
     };
     const client = new global.VetApiClient(cfg);
-    await client.login(wantedDeviceId, session.password);
+    client.setSessionToken(session.sessionToken);
     setApiClient(client);
     global.__vetApiClient = client;
     return client;

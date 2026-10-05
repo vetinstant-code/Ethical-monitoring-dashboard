@@ -61,11 +61,14 @@
     if (!global.API_CONFIG?.baseUrl || !global.VetApiClient) {
       throw new Error("API is not configured.");
     }
+    const session = global.VetAuth?.getSession?.() || {};
     const client = new global.VetApiClient({
       baseUrl: global.API_CONFIG.baseUrl,
       deviceId: deviceId(),
+      sessionToken: session.sessionToken || "",
       timeoutMs: global.API_CONFIG.timeoutMs || 25000,
     });
+    if (session.sessionToken) client.setSessionToken(session.sessionToken);
     return client;
   }
 

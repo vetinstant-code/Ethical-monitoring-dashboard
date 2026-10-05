@@ -1,9 +1,10 @@
 /**
  * Multi-device login gate — dashboard after sign-in.
+ * Server login returns session_token; pets/report APIs need X-Session-Token.
  */
 (function (global) {
   const SESSION_KEY = "vet_auth_session";
-  const DEFAULT_ALLOWED_DEVICES = ["ARMY", "BRUNO", "ARCHIT", "ZARA"];
+  const DEFAULT_ALLOWED_DEVICES = ["ARMY", "BRUNO", "ARCHIT", "ZARA", "ROCKY"];
 
   function $(id) {
     return document.getElementById(id);
@@ -32,24 +33,43 @@
       if (!raw) return null;
       const s = JSON.parse(raw);
       const deviceId = String(s.deviceId || "").trim().toUpperCase();
-      if (!getAllowedDevices().includes(deviceId) || !s.password) return null;
+      const sessionToken = String(s.sessionToken || "").trim();
+      if (!getAllowedDevices().includes(deviceId) || !sessionToken) return null;
       s.deviceId = deviceId;
+      s.sessionToken = sessionToken;
       return s;
     } catch {
       return null;
     }
   }
 
-  function saveSession(deviceId, password) {
+  function saveSession(deviceId, sessionToken, password = "") {
     sessionStorage.setItem(
       SESSION_KEY,
-      JSON.stringify({ deviceId, password, loggedInAt: Date.now() })
+      JSON.stringify({
+        deviceId: String(deviceId || "").trim().toUpperCase(),
+        sessionToken: String(sessionToken || "").trim(),
+        password: String(password || ""),
+        loggedInAt: Date.now(),
+      })
     );
+  }
+
+  function updateSessionToken(sessionToken) {
+    const s = getSession();
+    if (!s) return;
+    saveSession(s.deviceId, sessionToken, s.password || "");
   }
 
   function clearSession() {
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem("vet_device_password");
+    try {
+      localStorage.removeItem("session_token");
+      localStorage.removeItem("device_id");
+    } catch {
+      /* ignore */
+    }
   }
 
   function isLoggedIn() {
@@ -90,7 +110,13 @@
   }
 
   function applyDeviceMode(resetKpiCounts, deviceId = currentDeviceId()) {
-    document.body.classList.remove("device-army", "device-bruno", "device-archit", "device-zara");
+    document.body.classList.remove(
+      "device-army",
+      "device-bruno",
+      "device-archit",
+      "device-zara",
+      "device-rocky"
+    );
     document.body.classList.add(`device-${String(deviceId || "").toLowerCase()}`, "species-horse-only");
     document.title = "VetInstant — Animal Health Intelligence";
 
@@ -116,6 +142,12 @@
     }
   }
 
+  function onSessionExpired(detail) {
+    clearSession();
+    global.__vetApiClient = null;
+    showLogin(detail || "Session expired or invalid. Login again.");
+  }
+
   async function handleLogin(event) {
     event.preventDefault();
     const deviceId = ($("login-device")?.value || defaultDeviceId()).trim().toUpperCase();
@@ -126,13 +158,6 @@
     if (!getAllowedDevices().includes(deviceId)) {
       if (err) {
         err.textContent = `Allowed devices: ${getAllowedDevices().join(", ")}.`;
-        err.hidden = false;
-      }
-      return;
-    }
-    if (!password) {
-      if (err) {
-        err.textContent = `Enter the ${deviceId} device password.`;
         err.hidden = false;
       }
       return;
@@ -151,26 +176,36 @@
       global.__vetApiClient = null;
 
       const client = new global.VetApiClient({ ...global.API_CONFIG, deviceId });
-      await client.login(deviceId, password);
+      const data = await client.login(deviceId, password || undefined);
+      const token = String(data?.session_token || client.sessionToken || "").trim();
+      if (!token) throw new Error("Login did not return a session_token.");
 
-      saveSession(deviceId, password);
-      sessionStorage.setItem("vet_device_password", password);
+      saveSession(data?.device_id || deviceId, token, password);
+      try {
+        localStorage.setItem("device_id", data?.device_id || deviceId);
+        localStorage.setItem("session_token", token);
+      } catch {
+        /* ignore */
+      }
+      if (password) sessionStorage.setItem("vet_device_password", password);
       global.__vetApiClient = client;
       if (global.VetLiveApi?.setApiClient) global.VetLiveApi.setApiClient(client);
 
       global.VetReportsPage?.resetSession?.({ full: true });
       showApp();
-      applyDeviceMode(true, deviceId);
+      applyDeviceMode(true, data?.device_id || deviceId);
       if (location.hash !== "#/" && location.hash !== "#") {
         location.hash = "#/";
       }
       global.VetAppPages?.route?.();
       onDashboardReady();
       global.VetDashboardFilters?.populateAnimalTypes?.();
-      window.dispatchEvent(new CustomEvent("vet:session-changed", { detail: { deviceId } }));
+      window.dispatchEvent(
+        new CustomEvent("vet:session-changed", { detail: { deviceId: data?.device_id || deviceId } })
+      );
     } catch (e) {
       if (err) {
-        err.textContent = e.message || "Login failed. Check password and API connection.";
+        err.textContent = e.message || "Login failed. Check device and API connection.";
         err.hidden = false;
       }
     } finally {
@@ -181,7 +216,13 @@
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      const client = global.__vetApiClient;
+      if (client?.logout) await client.logout();
+    } catch {
+      /* ignore logout API errors */
+    }
     window.dispatchEvent(new CustomEvent("vet:session-ended"));
     global.VetReportsPage?.resetSession?.({ full: true });
     clearSession();
@@ -199,6 +240,14 @@
     populateDeviceOptions();
     $("login-form")?.addEventListener("submit", handleLogin);
     $("logout-btn")?.addEventListener("click", handleLogout);
+
+    const pwd = $("login-password");
+    if (pwd) {
+      pwd.required = false;
+      pwd.placeholder = "Optional";
+    }
+    const pwdLabel = document.querySelector('label[for="login-password"]');
+    if (pwdLabel) pwdLabel.textContent = "Password (optional)";
 
     window.addEventListener("dashboard:ready", () => {
       if (isLoggedIn()) global.VetAppPages?.route?.();
@@ -257,10 +306,13 @@
     isLoggedIn,
     getSession,
     getDeviceId: currentDeviceId,
+    getSessionToken: () => getSession()?.sessionToken || "",
     getAllowedDevices,
+    updateSessionToken,
     onDashboardReady,
     applyDeviceMode,
     showLogin,
+    onSessionExpired,
     logout: handleLogout,
   };
 })(window);

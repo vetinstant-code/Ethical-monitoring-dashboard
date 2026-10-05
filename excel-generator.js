@@ -899,15 +899,16 @@
     )
       .trim()
       .toUpperCase();
+    const token = String(session.sessionToken || "").trim();
+    if (!token) throw new Error("Not signed in (missing session token). Sign in again.");
     const cfg = {
       baseUrl: global.API_CONFIG.baseUrl,
       deviceId: resolvedDeviceId,
+      sessionToken: token,
       timeoutMs: Number(options.timeoutMs) || 25000,
     };
     const client = new global.VetApiClient(cfg);
-    if (resolvedDeviceId && session.password) {
-      await client.login(resolvedDeviceId, session.password);
-    }
+    client.setSessionToken(token);
     return { client, cfg };
   }
 

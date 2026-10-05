@@ -139,13 +139,16 @@
   async function ensureClient() {
     if (global.VetLiveApi?.ensureClient) return global.VetLiveApi.ensureClient();
     const session = global.VetAuth?.getSession?.() || {};
+    const token = String(session.sessionToken || "").trim();
+    if (!token) throw new Error("Not signed in.");
     const cfg = {
       baseUrl: global.API_CONFIG?.baseUrl,
       deviceId: session.deviceId || global.VetAuth?.getDeviceId?.() || global.API_CONFIG?.deviceId || "ARMY",
+      sessionToken: token,
       timeoutMs: global.API_CONFIG?.timeoutMs || 25000,
     };
     const client = new global.VetApiClient(cfg);
-    if (session.password) await client.login(cfg.deviceId, session.password);
+    client.setSessionToken(token);
     return client;
   }
 
