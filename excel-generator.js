@@ -818,6 +818,36 @@
     return uniqueSessions;
   }
 
+  /** True when a summary has exportable vitals (same bar Excel uses before notes check). */
+  function summaryHasExportableVitals(row) {
+    if (!row || typeof row !== "object") return false;
+    const keys = ["t1", "t2", "t3", "mean", "max", "ref1", "ref2", "ref3", "ref_max"];
+    return keys.some((k) => {
+      const n = Number(row[k]);
+      return Number.isFinite(n) && n > 0;
+    });
+  }
+
+  function pickLatestSummaryForCount(summaryRows, examSessionId, predicate) {
+    const sid = String(examSessionId || "").trim();
+    if (!sid) return null;
+    const matches = (summaryRows || []).filter(
+      (r) => String(r.exam_session_id || r.examSessionId || "").trim() === sid && predicate(r)
+    );
+    if (!matches.length) return null;
+    matches.sort((a, b) => rowDatetimeForSort(b) - rowDatetimeForSort(a));
+    return matches[0] || null;
+  }
+
+  function isRectalSummaryRow(row) {
+    const s = String(row?.sensor_type || row?.type || row?.sensor || "").trim().toLowerCase();
+    return s === "tmp" || /rectal/.test(s);
+  }
+
+  /**
+   * Count only rows Excel would write: sessions/summaries with IR/rectal/ref vitals.
+   * Blank exam sessions (no temperature data) are excluded so the badge matches download.
+   */
   function countTemperatureRowsForDay(uniqueSessions, summaryRows, day) {
     const summariesToday = summaryRows.filter((r) => extractDatetimeParts(r)[0] === day);
     const summarySessionIds = new Set(
@@ -830,14 +860,22 @@
     const processed = new Set(
       sessionsToProcess.map((s) => String(s.id || s.exam_session_id || "").trim()).filter(Boolean)
     );
-    let orphanIr = 0;
+
+    let count = 0;
+    sessionsToProcess.forEach((s) => {
+      const sid = String(s.id || s.exam_session_id || "").trim();
+      const ir = pickLatestSummaryForCount(summaryRows, sid, isIrSummaryRow);
+      const rect = pickLatestSummaryForCount(summaryRows, sid, isRectalSummaryRow);
+      if (summaryHasExportableVitals(ir) || summaryHasExportableVitals(rect)) count += 1;
+    });
+
     summariesToday.forEach((r) => {
       const sid = String(r.exam_session_id || r.examSessionId || "").trim();
       if (sid && processed.has(sid)) return;
       if (!isIrSummaryRow(r)) return;
-      orphanIr += 1;
+      if (summaryHasExportableVitals(r)) count += 1;
     });
-    return sessionsToProcess.length + orphanIr;
+    return count;
   }
 
   async function mapPool(items, limit, worker) {

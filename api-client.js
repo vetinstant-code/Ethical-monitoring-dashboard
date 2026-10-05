@@ -227,6 +227,42 @@
       });
     }
 
+    /** Queue ESP to upload sealed/partial diag buckets (no login required on server). */
+    diagFlush(deviceId) {
+      const id = String(deviceId || this.deviceId || "").trim();
+      return this._request("POST", "/api/diag/flush", {
+        json: { device_id: id },
+        deviceId: id,
+      });
+    }
+
+    /** List UTC days that have stored diag events for a device. */
+    diagEventDays(deviceId, { limit } = {}) {
+      const id = String(deviceId || this.deviceId || "").trim();
+      return this._request("GET", "/api/diag/events/days", {
+        params: { device_id: id, limit },
+        deviceId: id,
+      });
+    }
+
+    /**
+     * Query stored diag events (one UTC day). Filters use server_received_at.
+     * @param {{ deviceId?: string, date?: string, from?: string, to?: string, limit?: number, newestFirst?: boolean }} opts
+     */
+    diagEvents({ deviceId, date, from, to, limit, newestFirst } = {}) {
+      const id = String(deviceId || this.deviceId || "").trim();
+      const params = { device_id: id };
+      if (date) params.date = date;
+      if (from) params.from = from;
+      if (to) params.to = to;
+      if (limit != null) params.limit = limit;
+      if (newestFirst != null) params.newest_first = newestFirst ? "true" : "false";
+      return this._request("GET", "/api/diag/events", {
+        params,
+        deviceId: id,
+      });
+    }
+
     async downloadBinaryByHref(href, { baseUrl, deviceId } = {}) {
       const clean = String(href || "").trim();
       if (!clean) throw new Error("Missing audio download URL.");

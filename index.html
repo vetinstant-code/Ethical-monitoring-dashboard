@@ -16,7 +16,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=50" />
+  <link rel="stylesheet" href="styles.css?v=51" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -154,6 +154,18 @@
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
               <span>Reports</span>
+            </a>
+          </li>
+          <li class="nav-item" data-nav="logs">
+            <a href="#/logs" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="8" y1="13" x2="16" y2="13"></line>
+                <line x1="8" y1="17" x2="16" y2="17"></line>
+                <line x1="10" y1="9" x2="12" y2="9"></line>
+              </svg>
+              <span>Logs</span>
             </a>
           </li>
           <!-- Settings — hidden until feature is ready -->
@@ -721,6 +733,110 @@
         </section>
       </div>
 
+      <!-- VIEW: DEVICE DIAGNOSTIC LOGS -->
+      <div id="view-logs" class="app-view" hidden>
+        <section class="logs-page">
+          <div class="logs-toolbar">
+            <div class="logs-toolbar-title">
+              <h2>Device Logs</h2>
+              <p>ESP + STM diagnostic timeline · device <strong id="logs-device-label">—</strong></p>
+            </div>
+            <div class="logs-filters">
+              <div class="reports-dd" id="logs-dd-date">
+                <button type="button" class="reports-filter-pill reports-dd-trigger" id="logs-date-trigger" aria-haspopup="dialog" aria-expanded="false">
+                  <svg class="reports-filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
+                  <span class="reports-dd-label" id="logs-date-label">—</span>
+                  <svg class="reports-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                <div class="reports-dd-panel reports-dd-panel--calendar" id="logs-date-panel" hidden role="dialog" aria-label="Pick UTC date">
+                  <p class="logs-cal-hint">UTC days with stored logs are enabled. Grey days have no data.</p>
+                  <div class="dash-cal-head">
+                    <button type="button" class="dash-cal-nav" id="logs-cal-prev" aria-label="Previous month">‹</button>
+                    <strong class="dash-cal-title" id="logs-cal-title">October 2026</strong>
+                    <button type="button" class="dash-cal-nav" id="logs-cal-next" aria-label="Next month">›</button>
+                  </div>
+                  <div class="dash-cal-dows" aria-hidden="true">
+                    <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+                  </div>
+                  <div class="dash-cal-grid" id="logs-cal-grid"></div>
+                  <div class="dash-cal-footer">
+                    <button type="button" class="dash-cal-today" id="logs-cal-today">Today (UTC)</button>
+                  </div>
+                </div>
+              </div>
+
+              <label class="logs-time-field">
+                <span>From</span>
+                <input type="time" id="logs-from-time" step="1" />
+              </label>
+              <label class="logs-time-field">
+                <span>To</span>
+                <input type="time" id="logs-to-time" step="1" />
+              </label>
+
+              <span class="logs-days-badge" id="logs-days-badge">—</span>
+            </div>
+          </div>
+
+          <div class="logs-actions">
+            <button type="button" class="btn-secondary-action" id="logs-load-btn">Load events</button>
+            <button type="button" class="btn-secondary-action" id="logs-flush-btn">Flush device</button>
+            <button type="button" class="btn-generate-report" id="logs-generate-btn" disabled>Generate Excel</button>
+          </div>
+
+          <div class="logs-kpi-row">
+            <div class="logs-kpi"><span class="logs-kpi-label">Events</span><strong id="logs-event-count">0</strong></div>
+            <div class="logs-kpi logs-kpi--fault"><span class="logs-kpi-label">Faults</span><strong id="logs-fault-count">0</strong></div>
+          </div>
+
+          <p class="logs-time-banner" id="logs-time-banner" hidden></p>
+          <p class="logs-status" id="logs-status" hidden></p>
+
+          <article class="logs-preview-card">
+            <div class="logs-preview-head">
+              <h3>Story preview</h3>
+              <div class="logs-chips">
+                <button type="button" class="logs-chip is-active" data-logs-chip="all">All</button>
+                <button type="button" class="logs-chip" data-logs-chip="faults">Faults</button>
+                <button type="button" class="logs-chip" data-logs-chip="ui">UI</button>
+              </div>
+            </div>
+            <ul class="logs-preview-list" id="logs-preview-list">
+              <li class="logs-preview-empty">Select a date and load events to preview the story.</li>
+            </ul>
+          </article>
+
+          <article class="logs-history-card">
+            <h3>Download history</h3>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Device</th>
+                    <th>Date / range</th>
+                    <th>Events</th>
+                    <th>File</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-history-body">
+                  <tr>
+                    <td colspan="5" class="empty-state">No downloads yet. Generated log reports will appear here.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      </div>
+
     </main>
   </div>
 
@@ -729,20 +845,23 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="config.api.js?v=12"></script>
-  <script src="api-client.js?v=14"></script>
+  <script src="api-client.js?v=15"></script>
   <script src="auth.js?v=13"></script>
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=10"></script>
-  <script src="excel-generator.js?v=24"></script>
+  <script src="excel-generator.js?v=25"></script>
+  <script src="diag-log-decode.js?v=1"></script>
+  <script src="diag-log-excel.js?v=1"></script>
   <script src="dashboard-home.js?v=9"></script>
   <script src="live-api.js?v=38"></script>
-  <script src="app-pages.js?v=10"></script>
+  <script src="app-pages.js?v=11"></script>
   <script src="reports-page.js?v=22"></script>
+  <script src="logs-page.js?v=1"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=42").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=44").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

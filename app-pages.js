@@ -1,6 +1,6 @@
 /**
  * In-app pages: animals by category, today's vitals, animal temperature history.
- * Hash routes: #/  #/animals  #/vitals-today  #/animal/:id
+ * Hash routes: #/  #/animals  #/vitals-today  #/animal/:id  #/reports  #/logs
  */
 (function (global) {
   const VIEW_IDS = {
@@ -9,6 +9,7 @@
     "vitals-today": "view-vitals-today",
     history: "view-animal-history",
     reports: "view-reports",
+    logs: "view-logs",
   };
 
   const istDateFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -47,6 +48,7 @@
     if (parts[0] === "animals") return { name: "animals", petId: null };
     if (parts[0] === "vitals-today") return { name: "vitals-today", petId: null };
     if (parts[0] === "reports") return { name: "reports", petId: null };
+    if (parts[0] === "logs") return { name: "logs", petId: null };
     if (parts[0] === "animal" && parts[1]) {
       return { name: "history", petId: decodeURIComponent(parts[1]) };
     }
@@ -85,7 +87,8 @@
         (name === "animals" && nav === "animals") ||
         (name === "history" && nav === "animals") ||
         (name === "vitals-today" && nav === "vitals-today") ||
-        (name === "reports" && nav === "reports");
+        (name === "reports" && nav === "reports") ||
+        (name === "logs" && nav === "logs");
       item.classList.toggle("active", active);
     });
   }
@@ -470,7 +473,7 @@
     if (name === "animals") {
       showView("animals");
       setHeader("All Animals", "Browse animals category-wise and open temperature history.", true);
-      document.body.classList.remove("reports-mode");
+      document.body.classList.remove("reports-mode", "logs-mode");
       global.VetDashboardFilters?.showBar?.(false);
       await renderAnimalsPage();
       return;
@@ -479,7 +482,7 @@
     if (name === "vitals-today") {
       showView("vitals-today");
       setHeader("Vitals Checked Today", "Animals taken on the selected date.", true);
-      document.body.classList.remove("reports-mode");
+      document.body.classList.remove("reports-mode", "logs-mode");
       global.VetDashboardFilters?.showBar?.(false);
       await renderVitalsTodayPage();
       return;
@@ -488,7 +491,7 @@
     if (name === "history" && petId) {
       showView("history");
       setHeader("Temperature History", "DynamoDB session summaries (IR, rectal, ref, stats) for this animal.", true);
-      document.body.classList.remove("reports-mode");
+      document.body.classList.remove("reports-mode", "logs-mode");
       global.VetDashboardFilters?.showBar?.(false);
       await renderAnimalHistory(petId);
       return;
@@ -498,12 +501,24 @@
       showView("reports");
       setHeader("Reports", "Download clinical validation data", false);
       document.body.classList.add("reports-mode");
+      document.body.classList.remove("logs-mode");
       global.VetDashboardFilters?.showBar?.(false);
       global.VetReportsPage?.onShow?.();
       return;
     }
 
+    if (name === "logs") {
+      showView("logs");
+      setHeader("Device Logs", "ESP + STM diagnostic timeline and Excel trace report.", false);
+      document.body.classList.add("logs-mode");
+      document.body.classList.remove("reports-mode");
+      global.VetDashboardFilters?.showBar?.(false);
+      global.VetLogsPage?.onShow?.();
+      return;
+    }
+
     document.body.classList.remove("reports-mode");
+    document.body.classList.remove("logs-mode");
     global.VetDashboardFilters?.showBar?.(name === "dashboard");
     showView("dashboard");
     setHeader(
