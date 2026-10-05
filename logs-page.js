@@ -229,34 +229,151 @@
     return Number.isFinite(n) ? n : fb;
   }
 
+  const CHUNK_LIMIT = 2000;
+  const MAX_CHUNKS = 50; // safety: up to 100k events
+
+  function eventKey(ev) {
+    return [
+      ev.server_received_at || "",
+      ev.sk || "",
+      ev.code || "",
+      ev.event_time_s || "",
+      ev.bucket_id || "",
+      ev.session_hex || "",
+      ev.sequence_hex || "",
+    ].join("|");
+  }
+
+  /** Subtract 1 microsecond from an ISO timestamp for exclusive upper bound. */
+  function isoMinusOneMicro(iso) {
+    const raw = String(iso || "").trim();
+    if (!raw) return null;
+    const ms = Date.parse(raw);
+    if (!Number.isFinite(ms)) return raw;
+    // Prefer keeping fractional precision when present
+    const match = raw.match(/^(.*\.)(\d+)(Z)$/i);
+    if (match) {
+      const frac = match[2];
+      const digits = frac.length;
+      let n = BigInt(frac.padEnd(6, "0").slice(0, 6));
+      if (n > 0n) {
+        n -= 1n;
+        const nextFrac = String(n).padStart(6, "0").slice(0, digits);
+        return `${match[1]}${nextFrac}${match[3]}`;
+      }
+      return new Date(ms - 1).toISOString();
+    }
+    return new Date(ms - 1).toISOString();
+  }
+
+  function oldestServerReceivedAt(events) {
+    let oldest = null;
+    let oldestMs = Infinity;
+    (events || []).forEach((ev) => {
+      const iso = String(ev.server_received_at || "").trim();
+      const ms = Date.parse(iso);
+      if (!iso || !Number.isFinite(ms)) return;
+      if (ms < oldestMs) {
+        oldestMs = ms;
+        oldest = iso;
+      }
+    });
+    return oldest;
+  }
+
+  /**
+   * Full-day fetch via time windows (API hard-caps at 2000 per GET).
+   * Walks newest → older using `to` = oldest.server_received_at − 1µs until a short page.
+   */
+  async function fetchAllDiagEvents(client, { deviceId: id, date, from, to, onProgress } = {}) {
+    const all = [];
+    const seen = new Set();
+    let pageTo = to || undefined;
+    let chunks = 0;
+    let lastPayload = null;
+
+    while (chunks < MAX_CHUNKS) {
+      chunks += 1;
+      onProgress?.(chunks, all.length);
+      const payload = await client.diagEvents({
+        deviceId: id,
+        date,
+        from: from || undefined,
+        to: pageTo,
+        limit: CHUNK_LIMIT,
+        newestFirst: true,
+      });
+      lastPayload = payload;
+      const batch = Array.isArray(payload?.events) ? payload.events : [];
+      const count = num(payload?.count, batch.length);
+
+      batch.forEach((ev) => {
+        const key = eventKey(ev);
+        if (seen.has(key)) return;
+        seen.add(key);
+        all.push(ev);
+      });
+
+      if (count < CHUNK_LIMIT || batch.length === 0) break;
+
+      const oldest = oldestServerReceivedAt(batch);
+      if (!oldest) break;
+      const nextTo = isoMinusOneMicro(oldest);
+      if (!nextTo || nextTo === pageTo) break;
+      // Don't walk past user-supplied from bound
+      if (from) {
+        const fromMs = Date.parse(from.includes("T") ? from : `${date}T${from}Z`);
+        const nextMs = Date.parse(nextTo);
+        if (Number.isFinite(fromMs) && Number.isFinite(nextMs) && nextMs < fromMs) break;
+      }
+      pageTo = nextTo;
+    }
+
+    return {
+      device_id: lastPayload?.device_id || id,
+      day: lastPayload?.day || date,
+      from: from || lastPayload?.from || null,
+      to: to || lastPayload?.to || null,
+      count: all.length,
+      chunks,
+      capped: chunks >= MAX_CHUNKS,
+      events: all,
+    };
+  }
+
   async function fetchEvents({ quiet } = {}) {
     const token = ++state.fetchToken;
     state.loading = true;
-    if (!quiet) setStatus("Loading diagnostic events…", "info");
+    if (!quiet) setStatus("Loading diagnostic events (chunked)…", "info");
     setGenerateEnabled(false);
     try {
       const client = getClient();
-      const payload = await client.diagEvents({
+      const day = state.date || todayUtc();
+      const payload = await fetchAllDiagEvents(client, {
         deviceId: deviceId(),
-        date: state.date || todayUtc(),
+        date: day,
         from: state.from || undefined,
         to: state.to || undefined,
-        limit: 2000,
-        newestFirst: false,
+        onProgress: (chunk, soFar) => {
+          if (token !== state.fetchToken) return;
+          setStatus(`Loading events… chunk ${chunk} · ${soFar} so far`, "info");
+        },
       });
       if (token !== state.fetchToken) return;
       state.eventsPayload = payload;
       state.model = global.VetDiagLogDecode.buildReportModel(payload, {
         deviceId: deviceId(),
-        date: state.date || payload?.day || todayUtc(),
+        date: day,
       });
       renderPreview();
       const n = state.model.summary.totalEvents;
+      const chunkNote = payload.chunks > 1 ? ` · ${payload.chunks} chunk(s)` : "";
+      const capNote = payload.capped ? " · hit safety cap, may be incomplete" : "";
       setStatus(
         n
-          ? `Loaded ${n} event(s) for ${formatDateLabel(state.date)} · ${state.model.summary.faultCount} fault(s).`
+          ? `Loaded ${n} event(s) for ${formatDateLabel(state.date)}${chunkNote}${capNote} · ${state.model.summary.faultCount} fault(s).`
           : `No stored events for ${formatDateLabel(state.date)}. Try Flush if the device is online.`,
-        n ? "ok" : "warn"
+        n ? (payload.capped ? "warn" : "ok") : "warn"
       );
     } catch (err) {
       if (token !== state.fetchToken) return;
@@ -370,6 +487,7 @@
         date: state.date || state.model.summary.date,
         from: state.from,
         to: state.to,
+        chunks: state.eventsPayload?.chunks,
       });
       global.VetDiagLogExcel.downloadBuffer(buffer, filename);
       writeHistory({
@@ -382,7 +500,7 @@
         filename,
         size: byteLength,
       });
-      setStatus(`Downloaded ${filename}`, "ok");
+      setStatus(`Downloaded ${filename} · ${state.model.summary.totalEvents} event(s)`, "ok");
     } catch (err) {
       setStatus(`Excel failed: ${err.message || err}`, "error");
     }

@@ -1,5 +1,6 @@
 /**
- * Build polished diagnostic Excel: Story / All events / Faults.
+ * Build polished diagnostic Excel: Summary / Story / All events / Faults.
+ * Summary is on its own sheet so Story/All/Faults freeze only the header row (comfortable scrolling).
  */
 (function (global) {
   const COLORS = {
@@ -29,12 +30,16 @@
         right: { style: "thin", color: { argb: `FF${COLORS.border}` } },
       };
     });
-    row.height = 22;
+    row.height = 24;
   }
 
-  function styleDataCell(cell, { bg, bold } = {}) {
+  function styleDataCell(cell, { bg, bold, wrap } = {}) {
     cell.font = { name: "Calibri", size: 11, bold: !!bold, color: { argb: `FF${COLORS.text}` } };
-    cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    cell.alignment = {
+      vertical: "middle",
+      horizontal: "left",
+      wrapText: wrap !== false,
+    };
     cell.border = {
       top: { style: "thin", color: { argb: `FF${COLORS.border}` } },
       left: { style: "thin", color: { argb: `FF${COLORS.border}` } },
@@ -50,81 +55,82 @@
     });
   }
 
-  function autoHeight(row, text, min = 18, max = 72) {
+  function rowHeightFor(text, min = 20, max = 48) {
     const len = String(text || "").length;
-    const lines = Math.max(1, Math.ceil(len / 90));
-    row.height = Math.min(max, Math.max(min, lines * 15));
+    const lines = Math.max(1, Math.ceil(len / 100));
+    return Math.min(max, Math.max(min, 18 + (lines - 1) * 14));
   }
 
-  function writeSummaryBlock(ws, summary, from, to) {
+  function buildSummarySheet(wb, model, meta) {
+    const ws = wb.addWorksheet("Summary", {
+      views: [{ state: "frozen", ySplit: 1 }],
+    });
+    setWidths(ws, [28, 48]);
+    const title = ws.getRow(1);
+    title.values = ["Field", "Value"];
+    styleHeader(title, COLORS.headerBg);
+
     const lines = [
-      ["Device", summary.deviceId || "—"],
-      ["UTC date", summary.date || "—"],
-      ["Time filter", from || to ? `${from || "start"} → ${to || "end"}` : "Full day"],
-      ["Total events", String(summary.totalEvents ?? 0)],
-      ["Faults / alerts", String(summary.faultCount ?? 0)],
-      ["Wi‑Fi drop events", String(summary.wifiDrops ?? 0)],
-      ["MQTT drop events", String(summary.mqttDrops ?? 0)],
-      ["Last screen seen", summary.lastScreen || "—"],
-      ["First device time", summary.firstDeviceTime || "—"],
-      ["Last device time", summary.lastDeviceTime || "—"],
-      ["First server received", summary.firstServerTime || "—"],
-      ["Last server received", summary.lastServerTime || "—"],
+      ["Device", model.summary.deviceId || "—"],
+      ["UTC date", model.summary.date || "—"],
+      ["Time filter", meta.from || meta.to ? `${meta.from || "start"} → ${meta.to || "end"}` : "Full day"],
+      ["Total events", String(model.summary.totalEvents ?? 0)],
+      ["Faults / alerts", String(model.summary.faultCount ?? 0)],
+      ["Wi‑Fi drop events", String(model.summary.wifiDrops ?? 0)],
+      ["MQTT drop events", String(model.summary.mqttDrops ?? 0)],
+      ["Last screen seen", model.summary.lastScreen || "—"],
+      ["First device time", model.summary.firstDeviceTime || "—"],
+      ["Last device time", model.summary.lastDeviceTime || "—"],
+      ["First server received", model.summary.firstServerTime || "—"],
+      ["Last server received", model.summary.lastServerTime || "—"],
+      ["Chunks fetched", String(meta.chunks ?? "—")],
     ];
 
-    ws.mergeCells(1, 1, 1, 4);
-    const title = ws.getCell(1, 1);
-    title.value = "Diagnostic event log — summary";
-    title.font = { bold: true, size: 14, name: "Calibri", color: { argb: `FF${COLORS.headerBg}` } };
-    title.alignment = { vertical: "middle" };
-    ws.getRow(1).height = 26;
-
-    lines.forEach((pair, idx) => {
-      const r = idx + 3;
-      const row = ws.getRow(r);
-      row.getCell(1).value = pair[0];
-      row.getCell(2).value = pair[1];
-      styleDataCell(row.getCell(1), { bg: COLORS.summaryBg, bold: true });
-      styleDataCell(row.getCell(2), { bg: COLORS.summaryBg });
-      ws.mergeCells(r, 2, r, 4);
-      row.height = 20;
+    lines.forEach((pair, i) => {
+      const row = ws.getRow(i + 2);
+      row.values = pair;
+      styleDataCell(row.getCell(1), { bg: COLORS.summaryBg, bold: true, wrap: false });
+      styleDataCell(row.getCell(2), { bg: COLORS.summaryBg, wrap: false });
+      row.height = 22;
     });
-    return 3 + lines.length + 1;
   }
 
-  function buildStorySheet(wb, model, meta) {
+  function buildStorySheet(wb, model) {
     const ws = wb.addWorksheet("Story", {
-      views: [{ state: "frozen", ySplit: 1, activeCell: "A1" }],
+      views: [{ state: "frozen", ySplit: 1, activeCell: "A2" }],
     });
-    setWidths(ws, [22, 24, 100, 14]);
-    const start = writeSummaryBlock(ws, model.summary, meta.from, meta.to);
-
-    const headerRow = ws.getRow(start);
+    setWidths(ws, [24, 26, 110, 12]);
+    const headerRow = ws.getRow(1);
     headerRow.values = ["Device time", "Server received", "What happened", "Category"];
     styleHeader(headerRow, COLORS.headerBg);
-    ws.views = [{ state: "frozen", ySplit: start, activeCell: `A${start + 1}` }];
 
     model.storyLines.forEach((line, i) => {
-      const row = ws.getRow(start + 1 + i);
+      const row = ws.getRow(i + 2);
       row.values = [line.time, line.serverTime || "—", line.text, line.category];
       let bg = i % 2 ? COLORS.storyAlt : null;
       if (line.category === "fault") bg = COLORS.faultBg;
       else if (line.category === "ui") bg = COLORS.uiBg;
       else if (line.category === "metric") bg = COLORS.metricBg;
-      row.eachCell((cell) => styleDataCell(cell, { bg }));
-      autoHeight(row, line.text, 22, 90);
+      row.eachCell((cell, col) => styleDataCell(cell, { bg, wrap: col === 3 }));
+      row.height = rowHeightFor(line.text, 22, 56);
     });
 
     if (!model.storyLines.length) {
-      const row = ws.getRow(start + 1);
+      const row = ws.getRow(2);
       row.values = ["—", "—", "No story lines for this selection.", "—"];
       row.eachCell((cell) => styleDataCell(cell, { bg: COLORS.warnBg }));
     }
+
+    // Autofilter for comfortable browsing
+    ws.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: Math.max(1, model.storyLines.length + 1), column: 4 },
+    };
   }
 
   function buildTableSheet(wb, name, rows, headerBg) {
     const ws = wb.addWorksheet(name, {
-      views: [{ state: "frozen", ySplit: 1 }],
+      views: [{ state: "frozen", ySplit: 1, activeCell: "A2" }],
     });
     const headers = [
       "Device time",
@@ -140,7 +146,7 @@
       "Repeat",
       "Bucket",
     ];
-    setWidths(ws, [22, 24, 12, 10, 14, 12, 42, 22, 12, 12, 10, 10]);
+    setWidths(ws, [24, 26, 12, 10, 14, 12, 44, 24, 12, 12, 10, 10]);
     const headerRow = ws.getRow(1);
     headerRow.values = headers;
     styleHeader(headerRow, headerBg);
@@ -162,8 +168,8 @@
         r.bucketId,
       ];
       const bg = r.isFault ? COLORS.faultBg : i % 2 ? COLORS.storyAlt : null;
-      row.eachCell((cell) => styleDataCell(cell, { bg }));
-      autoHeight(row, `${r.meaning} ${r.value}`, 20, 60);
+      row.eachCell((cell, col) => styleDataCell(cell, { bg, wrap: col === 7 || col === 8 }));
+      row.height = rowHeightFor(`${r.meaning} ${r.value}`, 20, 40);
     });
 
     if (!rows.length) {
@@ -171,6 +177,11 @@
       row.values = ["—", "—", "—", "—", "—", "—", "No rows for this selection.", "", "", "", "", ""];
       row.eachCell((cell) => styleDataCell(cell, { bg: COLORS.warnBg }));
     }
+
+    ws.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: Math.max(1, rows.length + 1), column: headers.length },
+    };
   }
 
   async function exportDiagWorkbook(model, meta = {}) {
@@ -180,7 +191,8 @@
     wb.created = new Date();
     wb.modified = new Date();
 
-    buildStorySheet(wb, model, meta);
+    buildSummarySheet(wb, model, meta);
+    buildStorySheet(wb, model);
     buildTableSheet(wb, "All events", model.allRows, COLORS.headerBg);
     buildTableSheet(wb, "Faults", model.faultRows, COLORS.faultHeader);
 
