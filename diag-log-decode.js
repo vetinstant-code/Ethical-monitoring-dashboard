@@ -178,6 +178,16 @@
     "PW-17": "Battery NTC1 hot",
     "SS-20": "STM heap used ≥ 80%",
     "SS-21": "STM heap used ≥ 90%",
+    "ST-01": "STM boot / reset",
+    "ST-02": "STM watchdog / hard fault path",
+    "ST-03": "STM init / bring-up event",
+    "ST-04": "STM scheduler / task event",
+    "ST-05": "STM system heartbeat / runtime event",
+    "SU-01": "STM↔ESP UART framing / sync issue",
+    "SU-02": "STM↔ESP UART CRC / payload error",
+    "SU-03": "STM↔ESP UART timeout",
+    "SU-04": "STM↔ESP UART overflow / drop",
+    "SJ-01": "STM↔ESP UART bridge event",
     "TM-01": "Temperature probe alert",
     "TM-10": "Temperature probe alert",
     "TM-20": "Temperature probe alert",
@@ -461,7 +471,8 @@
       out.set(bytes, (i - 1) * 4);
       filled += 1;
     }
-    if (filled < 10) return null;
+    // Need at least SD-01..02 to read kind/screen (bytes 0–7)
+    if (filled < 2 || byId[1] == null || byId[2] == null) return null;
     return out.subarray(0, 74);
   }
 
@@ -514,56 +525,136 @@
     };
   }
 
-  function stmStoryLine(st, prev) {
-    const parts = [];
-    if (!prev || prev.screen !== st.screen) {
-      parts.push(`User is on the ${st.screenName} screen`);
-    }
-    if (st.kind === 1 && st.action === 1) {
-      parts.push(`opened ${st.screenName}`);
-    }
-    if (st.button !== 255 && st.buttonName !== "none") {
-      parts.push(`pressed ${st.buttonName}`);
-    }
-    if (st.action && st.action !== 0 && st.action !== 1) {
-      parts.push(st.actionName);
-    }
-    if (!prev || prev.wifiStatus !== st.wifiStatus) {
-      parts.push(`Wi‑Fi ${st.wifiStatusName.toLowerCase()}`);
-    }
-    if (!prev || prev.mqtt !== st.mqtt) {
-      parts.push(st.mqtt ? "MQTT online" : "MQTT offline");
-    }
-    if (st.audioStreaming && (!prev || !prev.audioStreaming)) {
-      parts.push("audio streaming started");
-    }
-    if (!st.audioStreaming && prev?.audioStreaming) {
-      parts.push("audio streaming stopped");
-    }
-    if (!prev || prev.batteryPct !== st.batteryPct || prev.batteryChg !== st.batteryChg) {
-      parts.push(`battery ${st.batteryPct}% (${st.batteryChgName}${st.batteryMv ? `, ${st.batteryMv} mV` : ""})`);
-    }
-    if (st.mcuTempOk && (!prev || prev.mcuTempC !== st.mcuTempC)) {
-      parts.push(`STM MCU temperature ${st.mcuTempC} °C`);
-    }
-    if (!parts.length) {
-      parts.push(
-        `${st.screenName}: Wi‑Fi ${st.wifiStatusName}, MQTT ${st.mqtt ? "online" : "offline"}, battery ${st.batteryPct}%`
-      );
-    }
-    return parts.join("; ") + ".";
+  /** Health dumps keep last button for a long time (button_age_s up to 255). Only treat as a real press when fresh. */
+  function isFreshButtonPress(st) {
+    if (st.button === 255 || st.buttonName === "none") return false;
+    if (st.kind === 1) return true;
+    return (st.buttonAgeS ?? 255) <= 2;
   }
 
-  function faultStoryLine(ev) {
+  function stmStoryLine(st, prev) {
+    const screen = st.screenName || "Unknown screen";
+    const screenChanged = !prev || prev.screen !== st.screen;
+    const freshPress = isFreshButtonPress(st);
+    const uiFrame = st.kind === 1;
+
+    // Real UI: screen change, dedicated UI frame, or freshly pressed button
+    if (uiFrame || freshPress || screenChanged) {
+      const parts = [];
+      if (screenChanged) {
+        parts.push(`Navigated to ${screen}`);
+      } else {
+        parts.push(`On ${screen}`);
+      }
+      if (uiFrame && st.action === 1) {
+        parts.push("entered this screen");
+      } else if (uiFrame && st.action && st.action !== 0) {
+        parts.push(st.actionName);
+      }
+      if (freshPress) {
+        parts.push(`pressed ${st.buttonName}`);
+      }
+      if (!prev || prev.wifiStatus !== st.wifiStatus) {
+        parts.push(`Wi‑Fi ${st.wifiStatusName.toLowerCase()}`);
+      }
+      if (!prev || prev.mqtt !== st.mqtt) {
+        parts.push(st.mqtt ? "MQTT online" : "MQTT offline");
+      }
+      if (st.audioStreaming && (!prev || !prev.audioStreaming)) {
+        parts.push("audio streaming started");
+      }
+      if (!st.audioStreaming && prev?.audioStreaming) {
+        parts.push("audio streaming stopped");
+      }
+      // Avoid empty "On Home." spam when nothing else changed on a UI frame
+      if (parts.length === 1 && !screenChanged && !freshPress) {
+        return { text: "", category: "ui", coalesceKey: "", skip: true };
+      }
+      return {
+        text: parts.join(" · ") + ".",
+        category: "ui",
+        coalesceKey: freshPress ? `ui|${screen}|${st.button}|${st.action || 0}` : `nav|${screen}`,
+        skip: false,
+      };
+    }
+
+    // Periodic health (kind 0) with stale button — only status deltas
+    const changes = [];
+    if (!prev || prev.wifiStatus !== st.wifiStatus) {
+      changes.push(`Wi‑Fi ${st.wifiStatusName.toLowerCase()}`);
+    }
+    if (!prev || prev.mqtt !== st.mqtt) {
+      changes.push(st.mqtt ? "MQTT online" : "MQTT offline");
+    }
+    if (st.audioStreaming && (!prev || !prev.audioStreaming)) {
+      changes.push("audio streaming started");
+    }
+    if (!st.audioStreaming && prev?.audioStreaming) {
+      changes.push("audio streaming stopped");
+    }
+    if (!prev || prev.batteryPct !== st.batteryPct || prev.batteryChg !== st.batteryChg) {
+      changes.push(`battery ${st.batteryPct}% (${st.batteryChgName})`);
+    }
+    if (st.mcuTempOk && (!prev || Math.abs((prev.mcuTempC || 0) - st.mcuTempC) >= 2)) {
+      changes.push(`STM MCU ${st.mcuTempC} °C`);
+    }
+    if (!prev) {
+      changes.push(
+        `STM health on ${screen}: Wi‑Fi ${st.wifiStatusName}, MQTT ${st.mqtt ? "online" : "offline"}, battery ${st.batteryPct}%`
+      );
+    }
+    if (!changes.length) {
+      return { text: "", category: "metric", coalesceKey: "", skip: true };
+    }
+    return {
+      text: `STM status · on ${screen} · ${changes.join(" · ")}.`,
+      category: "metric",
+      coalesceKey: "",
+      skip: false,
+    };
+  }
+
+  function faultStoryLine(ev, lastScreen) {
     const prefix = ev.code.split("-")[0];
-    if (prefix === "WF") return `Wi‑Fi problem: ${ev.meaning}.`;
-    if (prefix === "MQ") return `MQTT problem: ${ev.meaning}.`;
-    if (prefix === "TL") return `Cloud reachability problem: ${ev.meaning}.`;
-    if (prefix === "TM") return `Temperature probe alert: ${ev.meaning}.`;
-    if (prefix === "PW") return `Power / battery alert: ${ev.meaning}.`;
-    if (prefix === "UA" || prefix === "SU") return `Device link alert: ${ev.meaning}.`;
-    if (ev.source === "STM") return `STM alert (${ev.code}): ${ev.meaning}.`;
-    return `ESP alert (${ev.code}): ${ev.meaning}.`;
+    const onScreen = lastScreen ? ` (while on ${lastScreen})` : "";
+    if (prefix === "WF") return `Wi‑Fi problem: ${ev.meaning}${onScreen}.`;
+    if (prefix === "MQ") return `MQTT problem: ${ev.meaning}${onScreen}.`;
+    if (prefix === "TL") return `Cloud reachability problem: ${ev.meaning}${onScreen}.`;
+    if (prefix === "TM") return `Temperature probe alert: ${ev.meaning}${onScreen}.`;
+    if (prefix === "PW") return `Power / battery alert: ${ev.meaning}${onScreen}.`;
+    if (prefix === "UA" || prefix === "SU" || prefix === "SJ") {
+      return `STM↔ESP link alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+    }
+    if (prefix === "ST") return `STM system alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+    if (prefix === "SF") return `STM stream/flow alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+    if (prefix === "SC") return `STM cloud/Wi‑Fi alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+    if (prefix === "SS") return `STM runtime alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+    if (prefix === "IO") return `Button/GPIO alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+    if (ev.source === "STM") return `STM alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+    return `ESP alert (${ev.code}): ${ev.meaning}${onScreen}.`;
+  }
+
+  function coalesceStoryLines(lines) {
+    const out = [];
+    lines.forEach((line) => {
+      if (!line || line.skip || !line.text) return;
+      const prev = out[out.length - 1];
+      const canCoalesce =
+        line.coalesceKey &&
+        String(line.coalesceKey).startsWith("ui|") &&
+        prev &&
+        prev.coalesceKey &&
+        prev.coalesceKey === line.coalesceKey &&
+        prev.category === "ui";
+      if (canCoalesce) {
+        prev.count = (prev.count || 1) + 1;
+        prev.text = prev.text.replace(/\s*\(\d+×\)\./, ".").replace(/\.$/, ` (${prev.count}×).`);
+        prev.serverTime = line.serverTime || prev.serverTime;
+        return;
+      }
+      out.push({ ...line, count: 1 });
+    });
+    return out;
   }
 
   function buildReportModel(eventsPayload, meta = {}) {
@@ -586,12 +677,21 @@
 
     const allRows = [];
     const faultRows = [];
-    const storyLines = [];
+    const rawStory = [];
+    const rowByKey = new Map();
     let prevStm = null;
+    let prevEspWifi = null;
+    let prevEspMqtt = null;
     let wifiDrops = 0;
     let mqttDrops = 0;
     let lastScreen = "";
     let unsynced = 0;
+    let stmDecoded = 0;
+    let stmSkippedChunks = 0;
+
+    function rowKey(ev) {
+      return `${ev.eventTimeS}|${ev.code}|${ev.serverReceivedAt}|${ev.sessionHex}|${ev.sequenceHex}`;
+    }
 
     normalized.forEach((ev) => {
       if (ev.timeQuality === "U") unsynced += 1;
@@ -617,6 +717,7 @@
         isUi: isUiRelated(ev.code),
       };
       allRows.push(row);
+      rowByKey.set(rowKey(ev), row);
       if (ev.isFault) faultRows.push(row);
     });
 
@@ -634,56 +735,92 @@
           const payload = rebuildSdPayload(sdChunks);
           const st = decodeStmStatus(payload);
           if (st) {
+            stmDecoded += 1;
             lastScreen = st.screenName;
-            storyLines.push({
-              time: tLabel,
-              eventTimeS: ts,
-              serverTime: group[0]?.serverTimeText || "",
-              text: stmStoryLine(st, prevStm),
-              category: "ui",
+            const detail = [
+              `screen=${st.screenName}`,
+              `kind=${st.kind === 1 ? "UI" : "health"}`,
+              st.buttonName !== "none" ? `btn=${st.buttonName} age=${st.buttonAgeS}s` : null,
+              st.action ? `action=${st.actionName}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            // Annotate SD chunk rows so All-events sheet shows the UI decode
+            sdChunks.forEach((ev) => {
+              const row = rowByKey.get(rowKey(ev));
+              if (row && /^SD-0[12]$/.test(row.code)) {
+                row.value = detail;
+                row.meaning = `STM status · ${detail}`;
+              }
             });
+            const narr = stmStoryLine(st, prevStm);
+            if (!narr.skip && narr.text) {
+              rawStory.push({
+                time: tLabel,
+                eventTimeS: ts,
+                serverTime: group[0]?.serverTimeText || "",
+                text: narr.text,
+                category: narr.category,
+                coalesceKey: narr.coalesceKey || "",
+              });
+            }
             prevStm = st;
+          } else {
+            stmSkippedChunks += 1;
           }
         }
 
         faults.forEach((ev) => {
-          storyLines.push({
+          rawStory.push({
             time: tLabel,
             eventTimeS: ts,
             serverTime: ev.serverTimeText,
-            text: faultStoryLine(ev),
+            text: faultStoryLine(ev, lastScreen),
             category: "fault",
+            coalesceKey: "",
           });
         });
 
-        const ssid = rebuildSsid(pmChunks);
-        const die = pmChunks.find((e) => e.code === "PM-49");
-        const wifiOn = pmChunks.find((e) => e.code === "PM-09");
-        const mqttOn = pmChunks.find((e) => e.code === "PM-12");
-        const heap = pmChunks.find((e) => e.code === "PM-01");
-        const interesting =
-          ssid ||
-          die ||
-          (wifiOn && (wifiOn.valueU32 === 0 || !prevStm)) ||
-          (mqttOn && mqttOn.valueU32 === 0);
-        if (interesting && !sdChunks.length) {
-          const bits = [];
-          if (wifiOn) bits.push(wifiOn.valueU32 ? "Wi‑Fi connected" : "Wi‑Fi not connected");
-          if (mqttOn) bits.push(mqttOn.valueU32 ? "MQTT online" : "MQTT offline");
-          if (heap) bits.push(`ESP free heap ${heap.valueU32} bytes`);
-          if (die) bits.push(`ESP die temperature ${formatMetricDetail("PM-49", die.valueU32)}`);
-          if (ssid) bits.push(`Wi‑Fi network “${ssid}”`);
-          if (bits.length) {
-            storyLines.push({
-              time: tLabel,
-              eventTimeS: ts,
-              serverTime: group[0]?.serverTimeText || "",
-              text: `ESP status: ${bits.join("; ")}.`,
-              category: "metric",
-            });
+        // Periodic ESP metrics flood Story — only emit on Wi‑Fi/MQTT change or new SSID
+        if (!sdChunks.length && pmChunks.length) {
+          const ssid = rebuildSsid(pmChunks);
+          const wifiOn = pmChunks.find((e) => e.code === "PM-09");
+          const mqttOn = pmChunks.find((e) => e.code === "PM-12");
+          const heap = pmChunks.find((e) => e.code === "PM-01");
+          const die = pmChunks.find((e) => e.code === "PM-49");
+          const wifiVal = wifiOn ? wifiOn.valueU32 : null;
+          const mqttVal = mqttOn ? mqttOn.valueU32 : null;
+          const wifiChanged = wifiVal != null && wifiVal !== prevEspWifi;
+          const mqttChanged = mqttVal != null && mqttVal !== prevEspMqtt;
+          const firstSnap = prevEspWifi == null && prevEspMqtt == null && (wifiOn || mqttOn || ssid);
+          if (ssid || wifiChanged || mqttChanged || firstSnap) {
+            const bits = [];
+            if (wifiOn) bits.push(wifiOn.valueU32 ? "Wi‑Fi connected" : "Wi‑Fi not connected");
+            if (mqttOn) bits.push(mqttOn.valueU32 ? "MQTT online" : "MQTT offline");
+            if (heap && (wifiChanged || mqttChanged || firstSnap)) {
+              bits.push(`ESP free heap ${heap.valueU32} bytes`);
+            }
+            if (die && (wifiChanged || mqttChanged || firstSnap)) {
+              bits.push(`ESP die temperature ${formatMetricDetail("PM-49", die.valueU32)}`);
+            }
+            if (ssid) bits.push(`Wi‑Fi network “${ssid}”`);
+            if (bits.length) {
+              rawStory.push({
+                time: tLabel,
+                eventTimeS: ts,
+                serverTime: group[0]?.serverTimeText || "",
+                text: `ESP status: ${bits.join("; ")}.`,
+                category: "metric",
+                coalesceKey: "",
+              });
+            }
           }
+          if (wifiVal != null) prevEspWifi = wifiVal;
+          if (mqttVal != null) prevEspMqtt = mqttVal;
         }
       });
+
+    const storyLines = coalesceStoryLines(rawStory);
 
     const deviceId = meta.deviceId || eventsPayload?.device_id || normalized[0]?.raw?.device_id || "";
     const day = meta.date || eventsPayload?.day || "";
@@ -703,6 +840,9 @@
       lastServerTime: last?.serverTimeText || "—",
       unsyncedCount: unsynced,
       unsyncedRatio: normalized.length ? unsynced / normalized.length : 0,
+      stmDecoded,
+      stmSkippedChunks,
+      storyCount: storyLines.length,
     };
 
     return { summary, storyLines, allRows, faultRows, normalized };
