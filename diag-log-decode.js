@@ -246,8 +246,12 @@
   }
 
   function metricValueU32(ev) {
+    if (!ev || typeof ev !== "object") return 0;
+    // Normalized events store camelCase valueU32; API raw uses value_u32 / session halves
+    if (ev.valueU32 != null && Number.isFinite(Number(ev.valueU32))) return num(ev.valueU32) >>> 0;
     if (ev.value_u32 != null && Number.isFinite(Number(ev.value_u32))) return num(ev.value_u32) >>> 0;
     if (ev.value != null && Number.isFinite(Number(ev.value))) return num(ev.value) >>> 0;
+    if (ev.raw) return metricValueU32(ev.raw);
     return (u16(ev.source_session) | (u16(ev.source_sequence) << 16)) >>> 0;
   }
 
@@ -525,7 +529,7 @@
     };
   }
 
-  const DECODE_BUILD = "stm-ui-v6-2026-10-06";
+  const DECODE_BUILD = "stm-ui-v7-2026-10-06";
 
   /** Health dumps keep last button for a long time (button_age_s up to 255). Only treat as a real press when fresh. */
   function isFreshButtonPress(st) {
