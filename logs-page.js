@@ -472,7 +472,12 @@
     };
   }
 
-  async function fetchEvents() {
+  async function fetchEvents(opts = {}) {
+    if (!opts.userClicked) {
+      console.warn("fetchEvents blocked — only Load events button may fetch");
+      return;
+    }
+
     const errMsg = validateSelection();
     if (errMsg) {
       setStatus(errMsg, "warn");
@@ -674,7 +679,7 @@
   }
 
   function bindUi() {
-    $("logs-load-btn")?.addEventListener("click", () => fetchEvents());
+    $("logs-load-btn")?.addEventListener("click", () => fetchEvents({ userClicked: true }));
     $("logs-flush-btn")?.addEventListener("click", () => runFlushWait());
     $("logs-generate-btn")?.addEventListener("click", () => generateExcel());
 
@@ -690,9 +695,15 @@
 
     $("logs-from-time")?.addEventListener("change", (e) => {
       state.from = normalizeTimeInput(e.target.value || "");
+      state.model = null;
+      state.eventsPayload = null;
+      renderPreview();
     });
     $("logs-to-time")?.addEventListener("change", (e) => {
       state.to = normalizeTimeInput(e.target.value || "");
+      state.model = null;
+      state.eventsPayload = null;
+      renderPreview();
     });
 
     $("logs-date-trigger")?.addEventListener("click", () => {
@@ -700,7 +711,11 @@
       const open = panel && !panel.hidden;
       if (panel) panel.hidden = !!open;
       $("logs-date-trigger")?.setAttribute("aria-expanded", open ? "false" : "true");
-      if (!open) renderCalendar();
+      if (!open) {
+        renderCalendar();
+        // Lazy-load which days have data only when opening calendar
+        if (!state.daysCount) loadDays();
+      }
     });
 
     $("logs-cal-prev")?.addEventListener("click", () => {
@@ -724,8 +739,11 @@
       const [y, m] = state.date.split("-").map(Number);
       calYear = y;
       calMonth = m - 1;
+      state.model = null;
+      state.eventsPayload = null;
       syncLabels();
       renderCalendar();
+      renderPreview();
       $("logs-date-panel").hidden = true;
       setStatus("Date set to today (IST). Set From/To times, then press Load events.", "info");
     });
@@ -733,8 +751,11 @@
       const btn = e.target.closest("[data-date]");
       if (!btn || btn.disabled) return;
       state.date = btn.getAttribute("data-date");
+      state.model = null;
+      state.eventsPayload = null;
       syncLabels();
       renderCalendar();
+      renderPreview();
       $("logs-date-panel").hidden = true;
       setStatus(`Date set to ${formatDateLabel(state.date)}. Set From/To times, then press Load events.`, "info");
     });
@@ -751,13 +772,19 @@
   }
 
   async function onShow() {
-    if (!state.date) state.date = todayIst();
+    // Never auto-fetch events. Clear previous results so page looks idle.
+    state.fetchToken += 1; // cancel in-flight loads
+    state.loading = false;
+    state.model = null;
+    state.eventsPayload = null;
+    if (!state.date) state.date = null;
+    if ($("logs-from-time")) $("logs-from-time").value = state.from || "";
+    if ($("logs-to-time")) $("logs-to-time").value = state.to || "";
     syncLabels();
     renderHistory();
     renderPreview();
     bindUiOnce();
-    await loadDays();
-    setStatus("Select IST date + From/To times, then press Load events.", "info");
+    setStatus("Select IST date + From/To times, then press Load events. Nothing loads until then.", "info");
   }
 
   let bound = false;
