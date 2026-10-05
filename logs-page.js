@@ -1,17 +1,21 @@
 /**
  * Device diagnostic Logs page — flush, fetch, preview, Excel (Story / All / Faults).
+ * Loads only when user presses Load. Date + From/To (IST) are required.
  */
 (function (global) {
   const HISTORY_KEY = "vet_diag_log_download_history";
   const FLUSH_POLL_MS = 5000;
   const FLUSH_WAIT_MS = 120000;
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+  const CHUNK_LIMIT = 2000;
+  const MAX_CHUNKS = 50;
 
   const state = {
-    date: null,
-    from: "",
+    date: null, // IST YYYY-MM-DD
+    from: "", // IST HH:MM[:SS]
     to: "",
     chip: "all",
-    daysWithData: new Set(),
+    daysWithData: new Set(), // IST dates that overlap server UTC days with logs
     daysCount: 0,
     eventsPayload: null,
     model: null,
@@ -21,16 +25,21 @@
     fetchToken: 0,
   };
 
-  const utcDateFmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "UTC",
+  const istDateFmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
   const displayFmt = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
+    timeZone: "Asia/Kolkata",
     day: "2-digit",
     month: "short",
+    year: "numeric",
+  });
+  const monthTitleFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    month: "long",
     year: "numeric",
   });
 
@@ -44,17 +53,90 @@
       .toUpperCase();
   }
 
-  function todayUtc() {
-    return utcDateFmt.format(new Date());
+  function todayIst() {
+    return istDateFmt.format(new Date());
   }
 
   function formatDateLabel(iso) {
     if (!iso) return "—";
     try {
-      return displayFmt.format(new Date(`${iso}T12:00:00Z`));
+      return `${displayFmt.format(new Date(`${iso}T12:00:00+05:30`))} IST`;
     } catch {
-      return iso;
+      return `${iso} IST`;
     }
+  }
+
+  function normalizeTimeInput(raw) {
+    const t = String(raw || "").trim();
+    if (!t) return "";
+    if (/^\d{2}:\d{2}:\d{2}$/.test(t)) return t;
+    if (/^\d{2}:\d{2}$/.test(t)) return `${t}:00`;
+    return "";
+  }
+
+  function timeToSeconds(t) {
+    const n = normalizeTimeInput(t);
+    if (!n) return NaN;
+    const [h, m, s] = n.split(":").map(Number);
+    return h * 3600 + m * 60 + s;
+  }
+
+  /** IST calendar date + time → UTC ISO string. */
+  function istDateTimeToUtcIso(dateIso, timeText) {
+    const time = normalizeTimeInput(timeText);
+    const dm = String(dateIso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const tm = time.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+    if (!dm || !tm) return null;
+    const y = Number(dm[1]);
+    const mo = Number(dm[2]);
+    const d = Number(dm[3]);
+    const hh = Number(tm[1]);
+    const mm = Number(tm[2]);
+    const ss = Number(tm[3]);
+    const utcMs = Date.UTC(y, mo - 1, d, hh, mm, ss) - IST_OFFSET_MS;
+    return new Date(utcMs).toISOString();
+  }
+
+  function utcIsoToDate(iso) {
+    return istDateFmt.format(new Date(iso));
+  }
+
+  function addDaysIso(iso, delta) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + delta));
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(
+      dt.getUTCDate()
+    ).padStart(2, "0")}`;
+  }
+
+  /** Map server UTC days → IST calendar days that may contain those events. */
+  function utcDaysToIstSet(utcDays) {
+    const out = new Set();
+    (utcDays || []).forEach((utcDay) => {
+      const startUtc = `${utcDay}T00:00:00.000Z`;
+      const endUtc = `${utcDay}T23:59:59.999Z`;
+      out.add(utcIsoToDate(startUtc));
+      out.add(utcIsoToDate(endUtc));
+    });
+    return out;
+  }
+
+  function readTimeInputs() {
+    state.from = normalizeTimeInput($("logs-from-time")?.value || "");
+    state.to = normalizeTimeInput($("logs-to-time")?.value || "");
+  }
+
+  function validateSelection() {
+    readTimeInputs();
+    if (!state.date) return "Select an IST date.";
+    if (!state.from || !state.to) return "From and To times (IST) are required.";
+    if (!(timeToSeconds(state.from) < timeToSeconds(state.to))) {
+      return "From time must be earlier than To time (IST).";
+    }
+    const fromIso = istDateTimeToUtcIso(state.date, state.from);
+    const toIso = istDateTimeToUtcIso(state.date, state.to);
+    if (!fromIso || !toIso) return "Invalid date/time.";
+    return null;
   }
 
   function getClient() {
@@ -93,11 +175,11 @@
 
   function syncLabels() {
     const dateLabel = $("logs-date-label");
-    if (dateLabel) dateLabel.textContent = formatDateLabel(state.date || todayUtc());
+    if (dateLabel) dateLabel.textContent = state.date ? formatDateLabel(state.date) : "Select date (IST)";
     const daysBadge = $("logs-days-badge");
     if (daysBadge) {
       daysBadge.textContent = state.daysCount
-        ? `${state.daysCount} day(s) have logs`
+        ? `${state.daysWithData.size} IST day(s) with logs`
         : "No log days yet";
     }
     const deviceEl = $("logs-device-label");
@@ -165,7 +247,8 @@
     const banner = $("logs-time-banner");
     if (!state.model) {
       if (listEl) {
-        listEl.innerHTML = '<li class="logs-preview-empty">Select a date and load events to preview the story.</li>';
+        listEl.innerHTML =
+          '<li class="logs-preview-empty">Select IST date + From/To times, then press Load events.</li>';
       }
       if (countEl) countEl.textContent = "0";
       if (totalEl) totalEl.textContent = "0";
@@ -182,7 +265,7 @@
       banner.hidden = !show;
       if (show) {
         banner.textContent =
-          "Many events have unsynced device time (U). Device times may be boot-relative / approximate. Prefer Server received times for ordering when unsure.";
+          "Many events have unsynced device time (U). Device times may be boot-relative / approximate. Prefer Server received (IST) when unsure.";
       }
     }
 
@@ -207,13 +290,18 @@
     setGenerateEnabled(summary.totalEvents > 0);
   }
 
+  function num(v, fb = 0) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fb;
+  }
+
   async function loadDays() {
     try {
       const client = getClient();
       const resp = await client.diagEventDays(deviceId(), { limit: 60 });
-      const days = Array.isArray(resp?.days) ? resp.days : [];
-      state.daysWithData = new Set(days.map((d) => String(d)));
-      state.daysCount = num(resp?.count, days.length);
+      const utcDays = Array.isArray(resp?.days) ? resp.days.map(String) : [];
+      state.daysWithData = utcDaysToIstSet(utcDays);
+      state.daysCount = num(resp?.count, utcDays.length);
       syncLabels();
       renderCalendar();
     } catch (err) {
@@ -223,14 +311,6 @@
       syncLabels();
     }
   }
-
-  function num(v, fb = 0) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : fb;
-  }
-
-  const CHUNK_LIMIT = 2000;
-  const MAX_CHUNKS = 50; // safety: up to 100k events
 
   function eventKey(ev) {
     return [
@@ -244,13 +324,11 @@
     ].join("|");
   }
 
-  /** Subtract 1 microsecond from an ISO timestamp for exclusive upper bound. */
   function isoMinusOneMicro(iso) {
     const raw = String(iso || "").trim();
     if (!raw) return null;
     const ms = Date.parse(raw);
     if (!Number.isFinite(ms)) return raw;
-    // Prefer keeping fractional precision when present
     const match = raw.match(/^(.*\.)(\d+)(Z)$/i);
     if (match) {
       const frac = match[2];
@@ -281,24 +359,20 @@
     return oldest;
   }
 
-  /**
-   * Full-day fetch via time windows (API hard-caps at 2000 per GET).
-   * Walks newest → older using `to` = oldest.server_received_at − 1µs until a short page.
-   */
-  async function fetchAllDiagEvents(client, { deviceId: id, date, from, to, onProgress } = {}) {
+  async function fetchAllDiagEventsForUtcDay(client, { deviceId: id, date, fromIso, toIso, onProgress, chunkBase }) {
     const all = [];
     const seen = new Set();
-    let pageTo = to || undefined;
+    let pageTo = toIso || undefined;
     let chunks = 0;
     let lastPayload = null;
 
     while (chunks < MAX_CHUNKS) {
       chunks += 1;
-      onProgress?.(chunks, all.length);
+      onProgress?.((chunkBase || 0) + chunks, all.length);
       const payload = await client.diagEvents({
         deviceId: id,
         date,
-        from: from || undefined,
+        from: fromIso || undefined,
         to: pageTo,
         limit: CHUNK_LIMIT,
         newestFirst: true,
@@ -310,50 +384,113 @@
       batch.forEach((ev) => {
         const key = eventKey(ev);
         if (seen.has(key)) return;
+        const srv = Date.parse(ev.server_received_at || "");
+        if (fromIso && Number.isFinite(srv) && srv < Date.parse(fromIso)) return;
+        if (toIso && Number.isFinite(srv) && srv > Date.parse(toIso)) return;
         seen.add(key);
         all.push(ev);
       });
 
       if (count < CHUNK_LIMIT || batch.length === 0) break;
-
       const oldest = oldestServerReceivedAt(batch);
       if (!oldest) break;
       const nextTo = isoMinusOneMicro(oldest);
       if (!nextTo || nextTo === pageTo) break;
-      // Don't walk past user-supplied from bound
-      if (from) {
-        const fromMs = Date.parse(from.includes("T") ? from : `${date}T${from}Z`);
+      if (fromIso) {
         const nextMs = Date.parse(nextTo);
+        const fromMs = Date.parse(fromIso);
         if (Number.isFinite(fromMs) && Number.isFinite(nextMs) && nextMs < fromMs) break;
       }
       pageTo = nextTo;
     }
 
     return {
-      device_id: lastPayload?.device_id || id,
-      day: lastPayload?.day || date,
-      from: from || lastPayload?.from || null,
-      to: to || lastPayload?.to || null,
-      count: all.length,
+      events: all,
       chunks,
       capped: chunks >= MAX_CHUNKS,
-      events: all,
+      lastPayload,
     };
   }
 
-  async function fetchEvents({ quiet } = {}) {
+  /** IST window may span 1–2 UTC days — fetch each and merge. */
+  async function fetchAllDiagEventsIstWindow(client, { deviceId: id, istDate, fromTime, toTime, onProgress }) {
+    const fromIso = istDateTimeToUtcIso(istDate, fromTime);
+    const toIso = istDateTimeToUtcIso(istDate, toTime);
+
+    // API `date` is UTC day of server_received_at.
+    const fromUtcDay = new Date(fromIso).toISOString().slice(0, 10);
+    const toUtcDay = new Date(toIso).toISOString().slice(0, 10);
+    const days = [];
+    let cursor = fromUtcDay;
+    days.push(cursor);
+    while (cursor < toUtcDay) {
+      cursor = addDaysIso(cursor, 1);
+      days.push(cursor);
+    }
+
+    const all = [];
+    const seen = new Set();
+    let chunks = 0;
+    let capped = false;
+    let lastPayload = null;
+
+    for (const day of days) {
+      const dayStart = `${day}T00:00:00.000Z`;
+      const dayEnd = `${day}T23:59:59.999Z`;
+      const winFrom = Date.parse(fromIso) > Date.parse(dayStart) ? fromIso : dayStart;
+      const winTo = Date.parse(toIso) < Date.parse(dayEnd) ? toIso : dayEnd;
+      const part = await fetchAllDiagEventsForUtcDay(client, {
+        deviceId: id,
+        date: day,
+        fromIso: winFrom,
+        toIso: winTo,
+        onProgress,
+        chunkBase: chunks,
+      });
+      chunks += part.chunks;
+      if (part.capped) capped = true;
+      lastPayload = part.lastPayload || lastPayload;
+      part.events.forEach((ev) => {
+        const key = eventKey(ev);
+        if (seen.has(key)) return;
+        seen.add(key);
+        all.push(ev);
+      });
+    }
+
+    return {
+      device_id: lastPayload?.device_id || id,
+      day: istDate,
+      from: fromIso,
+      to: toIso,
+      count: all.length,
+      chunks,
+      capped,
+      events: all,
+      ist_from: `${istDate} ${normalizeTimeInput(fromTime)} IST`,
+      ist_to: `${istDate} ${normalizeTimeInput(toTime)} IST`,
+    };
+  }
+
+  async function fetchEvents() {
+    const errMsg = validateSelection();
+    if (errMsg) {
+      setStatus(errMsg, "warn");
+      setGenerateEnabled(false);
+      return;
+    }
+
     const token = ++state.fetchToken;
     state.loading = true;
-    if (!quiet) setStatus("Loading diagnostic events (chunked)…", "info");
+    setStatus("Loading diagnostic events (IST window, chunked)…", "info");
     setGenerateEnabled(false);
     try {
       const client = getClient();
-      const day = state.date || todayUtc();
-      const payload = await fetchAllDiagEvents(client, {
+      const payload = await fetchAllDiagEventsIstWindow(client, {
         deviceId: deviceId(),
-        date: day,
-        from: state.from || undefined,
-        to: state.to || undefined,
+        istDate: state.date,
+        fromTime: state.from,
+        toTime: state.to,
         onProgress: (chunk, soFar) => {
           if (token !== state.fetchToken) return;
           setStatus(`Loading events… chunk ${chunk} · ${soFar} so far`, "info");
@@ -363,7 +500,7 @@
       state.eventsPayload = payload;
       state.model = global.VetDiagLogDecode.buildReportModel(payload, {
         deviceId: deviceId(),
-        date: day,
+        date: state.date,
       });
       renderPreview();
       const n = state.model.summary.totalEvents;
@@ -371,8 +508,8 @@
       const capNote = payload.capped ? " · hit safety cap, may be incomplete" : "";
       setStatus(
         n
-          ? `Loaded ${n} event(s) for ${formatDateLabel(state.date)}${chunkNote}${capNote} · ${state.model.summary.faultCount} fault(s).`
-          : `No stored events for ${formatDateLabel(state.date)}. Try Flush if the device is online.`,
+          ? `Loaded ${n} event(s) · ${payload.ist_from} → ${payload.ist_to}${chunkNote}${capNote} · ${state.model.summary.faultCount} fault(s).`
+          : `No events in ${payload.ist_from} → ${payload.ist_to}. Try Flush, then Load again.`,
         n ? (payload.capped ? "warn" : "ok") : "warn"
       );
     } catch (err) {
@@ -398,7 +535,6 @@
     const client = getClient();
     const id = deviceId();
     const t0 = Date.now();
-    const t0Iso = new Date(t0).toISOString();
     state.flushing = true;
     setGenerateEnabled(false);
     $("logs-flush-btn")?.setAttribute("disabled", "disabled");
@@ -414,8 +550,7 @@
       return;
     }
 
-    // Prefer today's UTC while waiting for new uploads
-    const waitDate = todayUtc();
+    const waitDate = new Date().toISOString().slice(0, 10); // UTC day for server storage
     let baselineCount = 0;
     try {
       const snap = await client.diagEvents({ deviceId: id, date: waitDate, limit: 50, newestFirst: true });
@@ -447,12 +582,9 @@
           clearFlushTimer();
           state.flushing = false;
           $("logs-flush-btn")?.removeAttribute("disabled");
-          state.date = waitDate;
-          syncLabels();
-          renderCalendar();
-          setStatus("Device upload detected — refreshing full day…", "ok");
           await loadDays();
-          await fetchEvents();
+          setStatus("Device upload detected. Set IST date + From/To, then press Load events.", "ok");
+          setGenerateEnabled(!!state.model?.summary?.totalEvents);
           return;
         }
       } catch (err) {
@@ -463,21 +595,17 @@
         state.flushing = false;
         $("logs-flush-btn")?.removeAttribute("disabled");
         setStatus(
-          "No upload (device offline or empty). You can still Generate from whatever is already stored for the selected day.",
+          "No upload (device offline or empty). You can still Load with date + From/To if data was already stored.",
           "warn"
         );
-        state.date = state.date || waitDate;
-        await fetchEvents();
+        setGenerateEnabled(!!state.model?.summary?.totalEvents);
       }
     }, FLUSH_POLL_MS);
-
-    // silence unused
-    void t0Iso;
   }
 
   async function generateExcel() {
     if (!state.model || !state.model.summary.totalEvents) {
-      setStatus("Nothing to generate — load a day with events first.", "warn");
+      setStatus("Nothing to generate — Load events first (date + From/To required).", "warn");
       return;
     }
     try {
@@ -485,17 +613,15 @@
       const { buffer, filename, byteLength } = await global.VetDiagLogExcel.exportDiagWorkbook(state.model, {
         deviceId: deviceId(),
         date: state.date || state.model.summary.date,
-        from: state.from,
-        to: state.to,
+        from: state.eventsPayload?.ist_from || state.from,
+        to: state.eventsPayload?.ist_to || state.to,
         chunks: state.eventsPayload?.chunks,
       });
       global.VetDiagLogExcel.downloadBuffer(buffer, filename);
       writeHistory({
-        when: new Date().toLocaleString(),
+        when: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
         device: deviceId(),
-        range: state.from || state.to
-          ? `${state.date} ${state.from || "…"}–${state.to || "…"}`
-          : state.date,
+        range: `${state.date} ${state.from}–${state.to} IST`,
         events: state.model.summary.totalEvents,
         filename,
         size: byteLength,
@@ -513,23 +639,21 @@
     const grid = $("logs-cal-grid");
     const title = $("logs-cal-title");
     if (!grid) return;
-    const selected = state.date || todayUtc();
+    const selected = state.date || todayIst();
     if (calYear == null || calMonth == null) {
       const [y, m] = selected.split("-").map(Number);
       calYear = y;
       calMonth = m - 1;
     }
     if (title) {
-      title.textContent = new Intl.DateTimeFormat("en-GB", {
-        month: "long",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(new Date(Date.UTC(calYear, calMonth, 1)));
+      title.textContent = monthTitleFmt.format(new Date(Date.UTC(calYear, calMonth, 15)));
     }
-    const firstDow = new Date(Date.UTC(calYear, calMonth, 1)).getUTCDay();
-    const startDow = firstDow === 0 ? 6 : firstDow - 1;
-    const daysInMonth = new Date(Date.UTC(calYear, calMonth + 1, 0)).getUTCDate();
-    const today = todayUtc();
+    // Build grid in plain calendar months (IST date numbers = civil calendar)
+    const first = new Date(calYear, calMonth, 1);
+    let startDow = first.getDay();
+    startDow = startDow === 0 ? 6 : startDow - 1;
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const today = todayIst();
     const cells = [];
     for (let i = 0; i < startDow; i++) cells.push('<span class="dash-cal-day is-empty"></span>');
     for (let day = 1; day <= daysInMonth; day++) {
@@ -565,10 +689,10 @@
     });
 
     $("logs-from-time")?.addEventListener("change", (e) => {
-      state.from = e.target.value || "";
+      state.from = normalizeTimeInput(e.target.value || "");
     });
     $("logs-to-time")?.addEventListener("change", (e) => {
-      state.to = e.target.value || "";
+      state.to = normalizeTimeInput(e.target.value || "");
     });
 
     $("logs-date-trigger")?.addEventListener("click", () => {
@@ -596,14 +720,14 @@
       renderCalendar();
     });
     $("logs-cal-today")?.addEventListener("click", () => {
-      state.date = todayUtc();
+      state.date = todayIst();
       const [y, m] = state.date.split("-").map(Number);
       calYear = y;
       calMonth = m - 1;
       syncLabels();
       renderCalendar();
       $("logs-date-panel").hidden = true;
-      fetchEvents();
+      setStatus("Date set to today (IST). Set From/To times, then press Load events.", "info");
     });
     $("logs-cal-grid")?.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-date]");
@@ -612,7 +736,7 @@
       syncLabels();
       renderCalendar();
       $("logs-date-panel").hidden = true;
-      fetchEvents();
+      setStatus(`Date set to ${formatDateLabel(state.date)}. Set From/To times, then press Load events.`, "info");
     });
 
     document.addEventListener("click", (e) => {
@@ -627,13 +751,13 @@
   }
 
   async function onShow() {
-    if (!state.date) state.date = todayUtc();
+    if (!state.date) state.date = todayIst();
     syncLabels();
     renderHistory();
     renderPreview();
     bindUiOnce();
     await loadDays();
-    await fetchEvents({ quiet: true });
+    setStatus("Select IST date + From/To times, then press Load events.", "info");
   }
 
   let bound = false;

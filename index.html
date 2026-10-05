@@ -755,8 +755,8 @@
                     <polyline points="6 9 12 15 18 9"></polyline>
                   </svg>
                 </button>
-                <div class="reports-dd-panel reports-dd-panel--calendar" id="logs-date-panel" hidden role="dialog" aria-label="Pick UTC date">
-                  <p class="logs-cal-hint">UTC days with stored logs are enabled. Grey days have no data.</p>
+                <div class="reports-dd-panel reports-dd-panel--calendar" id="logs-date-panel" hidden role="dialog" aria-label="Pick IST date">
+                  <p class="logs-cal-hint">Pick an IST date. Days with stored logs are highlighted. Grey = no data. From/To times are required (IST).</p>
                   <div class="dash-cal-head">
                     <button type="button" class="dash-cal-nav" id="logs-cal-prev" aria-label="Previous month">‹</button>
                     <strong class="dash-cal-title" id="logs-cal-title">October 2026</strong>
@@ -767,18 +767,18 @@
                   </div>
                   <div class="dash-cal-grid" id="logs-cal-grid"></div>
                   <div class="dash-cal-footer">
-                    <button type="button" class="dash-cal-today" id="logs-cal-today">Today (UTC)</button>
+                    <button type="button" class="dash-cal-today" id="logs-cal-today">Today (IST)</button>
                   </div>
                 </div>
               </div>
 
               <label class="logs-time-field">
-                <span>From</span>
-                <input type="time" id="logs-from-time" step="1" />
+                <span>From (IST)</span>
+                <input type="time" id="logs-from-time" step="1" required />
               </label>
               <label class="logs-time-field">
-                <span>To</span>
-                <input type="time" id="logs-to-time" step="1" />
+                <span>To (IST)</span>
+                <input type="time" id="logs-to-time" step="1" required />
               </label>
 
               <span class="logs-days-badge" id="logs-days-badge">—</span>
@@ -809,7 +809,7 @@
               </div>
             </div>
             <ul class="logs-preview-list" id="logs-preview-list">
-              <li class="logs-preview-empty">Select a date and load events to preview the story.</li>
+              <li class="logs-preview-empty">Select IST date + From/To times, then press Load events.</li>
             </ul>
           </article>
 
@@ -850,18 +850,18 @@
   <script src="api-adapter.js?v=9"></script>
   <script src="app-filters.js?v=10"></script>
   <script src="excel-generator.js?v=26"></script>
-  <script src="diag-log-decode.js?v=1"></script>
+  <script src="diag-log-decode.js?v=2"></script>
   <script src="diag-log-excel.js?v=2"></script>
   <script src="dashboard-home.js?v=9"></script>
   <script src="live-api.js?v=39"></script>
   <script src="app-pages.js?v=12"></script>
   <script src="reports-page.js?v=22"></script>
-  <script src="logs-page.js?v=3"></script>
+  <script src="logs-page.js?v=4"></script>
   <script src="login-fx.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=46").catch((error) => {
+        navigator.serviceWorker.register("./service-worker.js?v=47").catch((error) => {
           console.error("Service worker registration failed:", error);
         });
       });

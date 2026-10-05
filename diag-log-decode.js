@@ -315,6 +315,24 @@
     return `Diagnostic event ${code}`;
   }
 
+  const istDateTimeFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  function formatIstDateTime(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+    const parts = istDateTimeFmt.formatToParts(date);
+    const get = (t) => parts.find((p) => p.type === t)?.value || "";
+    return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")} IST`;
+  }
+
   function formatDeviceTime(eventTimeS, timeQuality) {
     const s = num(eventTimeS, NaN);
     if (!Number.isFinite(s) || s <= 0) return { text: "—", iso: "" };
@@ -331,7 +349,7 @@
     const d = new Date(s * 1000);
     if (Number.isNaN(d.getTime())) return { text: String(s), iso: "" };
     return {
-      text: d.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC"),
+      text: formatIstDateTime(d),
       iso: d.toISOString(),
     };
   }
@@ -341,7 +359,7 @@
     if (!raw) return "—";
     const d = new Date(raw);
     if (Number.isNaN(d.getTime())) return raw;
-    return d.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+    return formatIstDateTime(d);
   }
 
   function formatMetricDetail(code, valueU32) {
