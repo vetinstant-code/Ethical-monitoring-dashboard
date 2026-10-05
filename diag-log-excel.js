@@ -76,6 +76,7 @@
       ["Time filter", meta.from || meta.to ? `${meta.from || "start"} → ${meta.to || "end"}` : "Full day"],
       ["Total events", String(model.summary.totalEvents ?? 0)],
       ["Faults / alerts", String(model.summary.faultCount ?? 0)],
+      ["STM status frames decoded", String(model.summary.stmFrameCount ?? model.summary.stmDecoded ?? 0)],
       ["Wi‑Fi drop events", String(model.summary.wifiDrops ?? 0)],
       ["MQTT drop events", String(model.summary.mqttDrops ?? 0)],
       ["Last screen seen", model.summary.lastScreen || "—"],
@@ -84,6 +85,7 @@
       ["First server received", model.summary.firstServerTime || "—"],
       ["Last server received", model.summary.lastServerTime || "—"],
       ["Chunks fetched", String(meta.chunks ?? "—")],
+      ["Decoder build", model.summary.decodeBuild || "—"],
     ];
 
     lines.forEach((pair, i) => {
@@ -184,6 +186,67 @@
     };
   }
 
+  function buildStmTimelineSheet(wb, model) {
+    const ws = wb.addWorksheet("STM timeline", {
+      views: [{ state: "frozen", ySplit: 1, activeCell: "A2" }],
+    });
+    const headers = [
+      "Device time",
+      "Server received",
+      "Kind",
+      "Screen",
+      "Button",
+      "Btn age (s)",
+      "Action",
+      "Wi‑Fi",
+      "MQTT",
+      "Audio",
+      "Battery %",
+      "Battery mV",
+      "STM MCU °C",
+      "MCU ok",
+    ];
+    setWidths(ws, [24, 26, 10, 18, 10, 10, 18, 12, 10, 12, 10, 12, 12, 8]);
+    const headerRow = ws.getRow(1);
+    headerRow.values = headers;
+    styleHeader(headerRow, COLORS.headerBg);
+
+    const frames = model.stmFrames || [];
+    frames.forEach((f, i) => {
+      const row = ws.getRow(i + 2);
+      row.values = [
+        f.deviceTime,
+        f.serverTime,
+        f.kind,
+        f.screen,
+        f.button,
+        f.buttonAgeS,
+        f.action,
+        f.wifi,
+        f.mqtt,
+        f.audio,
+        f.batteryPct,
+        f.batteryMv,
+        f.mcuTempC == null ? "—" : f.mcuTempC,
+        f.mcuTempOk,
+      ];
+      const bg = f.kind === "UI" ? COLORS.uiBg : i % 2 ? COLORS.storyAlt : null;
+      row.eachCell((cell) => styleDataCell(cell, { bg, wrap: false }));
+      row.height = 20;
+    });
+
+    if (!frames.length) {
+      const row = ws.getRow(2);
+      row.values = ["—", "—", "—", "No STM 0x5B frames decoded in this window.", "", "", "", "", "", "", "", "", "", ""];
+      row.eachCell((cell) => styleDataCell(cell, { bg: COLORS.warnBg }));
+    }
+
+    ws.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: Math.max(1, frames.length + 1), column: headers.length },
+    };
+  }
+
   async function exportDiagWorkbook(model, meta = {}) {
     if (typeof ExcelJS === "undefined") throw new Error("ExcelJS is not loaded.");
     const wb = new ExcelJS.Workbook();
@@ -193,6 +256,7 @@
 
     buildSummarySheet(wb, model, meta);
     buildStorySheet(wb, model);
+    buildStmTimelineSheet(wb, model);
     buildTableSheet(wb, "All events", model.allRows, COLORS.headerBg);
     buildTableSheet(wb, "Faults", model.faultRows, COLORS.faultHeader);
 

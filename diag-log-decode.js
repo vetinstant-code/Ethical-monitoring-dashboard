@@ -525,6 +525,8 @@
     };
   }
 
+  const DECODE_BUILD = "stm-ui-v6-2026-10-06";
+
   /** Health dumps keep last button for a long time (button_age_s up to 255). Only treat as a real press when fresh. */
   function isFreshButtonPress(st) {
     if (st.button === 255 || st.buttonName === "none") return false;
@@ -595,12 +597,14 @@
     if (!prev || prev.batteryPct !== st.batteryPct || prev.batteryChg !== st.batteryChg) {
       changes.push(`battery ${st.batteryPct}% (${st.batteryChgName})`);
     }
-    if (st.mcuTempOk && (!prev || Math.abs((prev.mcuTempC || 0) - st.mcuTempC) >= 2)) {
+    // Always surface STM die temp when present (user-visible vs ESP-only Story)
+    if (st.mcuTempOk && (!prev || !prev.mcuTempOk || Math.abs((prev.mcuTempC || 0) - st.mcuTempC) >= 1)) {
       changes.push(`STM MCU ${st.mcuTempC} °C`);
     }
     if (!prev) {
       changes.push(
-        `STM health on ${screen}: Wi‑Fi ${st.wifiStatusName}, MQTT ${st.mqtt ? "online" : "offline"}, battery ${st.batteryPct}%`
+        `STM health on ${screen}: Wi‑Fi ${st.wifiStatusName}, MQTT ${st.mqtt ? "online" : "offline"}, battery ${st.batteryPct}%` +
+          (st.mcuTempOk ? `, STM MCU ${st.mcuTempC} °C` : "")
       );
     }
     if (!changes.length) {
@@ -639,13 +643,13 @@
     lines.forEach((line) => {
       if (!line || line.skip || !line.text) return;
       const prev = out[out.length - 1];
+      const key = line.coalesceKey || "";
       const canCoalesce =
-        line.coalesceKey &&
-        String(line.coalesceKey).startsWith("ui|") &&
+        key &&
         prev &&
-        prev.coalesceKey &&
-        prev.coalesceKey === line.coalesceKey &&
-        prev.category === "ui";
+        prev.coalesceKey === key &&
+        ((key.startsWith("ui|") && prev.category === "ui") ||
+          (key.startsWith("fault|") && prev.category === "fault"));
       if (canCoalesce) {
         prev.count = (prev.count || 1) + 1;
         prev.text = prev.text.replace(/\s*\(\d+×\)\./, ".").replace(/\.$/, ` (${prev.count}×).`);
@@ -678,10 +682,12 @@
     const allRows = [];
     const faultRows = [];
     const rawStory = [];
+    const stmFrames = [];
     const rowByKey = new Map();
     let prevStm = null;
     let prevEspWifi = null;
     let prevEspMqtt = null;
+    let lastStmHeartbeatTs = null;
     let wifiDrops = 0;
     let mqttDrops = 0;
     let lastScreen = "";
@@ -737,15 +743,32 @@
           if (st) {
             stmDecoded += 1;
             lastScreen = st.screenName;
+            stmFrames.push({
+              deviceTime: tLabel,
+              serverTime: group[0]?.serverTimeText || "",
+              eventTimeS: ts,
+              kind: st.kind === 1 ? "UI" : "health",
+              screen: st.screenName,
+              button: st.buttonName,
+              buttonAgeS: st.buttonAgeS,
+              action: st.action ? st.actionName : "—",
+              wifi: st.wifiStatusName,
+              mqtt: st.mqtt ? "online" : "offline",
+              audio: st.audioStreaming ? "streaming" : "idle",
+              batteryPct: st.batteryPct,
+              batteryMv: st.batteryMv,
+              mcuTempC: st.mcuTempOk ? st.mcuTempC : null,
+              mcuTempOk: st.mcuTempOk ? "yes" : "no",
+            });
             const detail = [
               `screen=${st.screenName}`,
               `kind=${st.kind === 1 ? "UI" : "health"}`,
               st.buttonName !== "none" ? `btn=${st.buttonName} age=${st.buttonAgeS}s` : null,
               st.action ? `action=${st.actionName}` : null,
+              st.mcuTempOk ? `STM_MCU=${st.mcuTempC}C` : null,
             ]
               .filter(Boolean)
               .join(" · ");
-            // Annotate SD chunk rows so All-events sheet shows the UI decode
             sdChunks.forEach((ev) => {
               const row = rowByKey.get(rowKey(ev));
               if (row && /^SD-0[12]$/.test(row.code)) {
@@ -764,6 +787,32 @@
                 coalesceKey: narr.coalesceKey || "",
               });
             }
+            // Heartbeat so Story always shows STM MCU temp / screen at least every ~60s
+            const needBeat =
+              lastStmHeartbeatTs == null ||
+              (Number.isFinite(ts) && ts - lastStmHeartbeatTs >= 60);
+            if (needBeat) {
+              const already =
+                narr &&
+                !narr.skip &&
+                narr.text &&
+                (narr.text.includes("STM MCU") || narr.text.includes("Navigated"));
+              if (!already) {
+                const bits = [`on ${st.screenName}`];
+                if (st.mcuTempOk) bits.push(`STM MCU ${st.mcuTempC} °C`);
+                bits.push(`battery ${st.batteryPct}%`);
+                bits.push(st.mqtt ? "MQTT online" : "MQTT offline");
+                rawStory.push({
+                  time: tLabel,
+                  eventTimeS: ts,
+                  serverTime: group[0]?.serverTimeText || "",
+                  text: `STM status · ${bits.join(" · ")}.`,
+                  category: "metric",
+                  coalesceKey: "",
+                });
+              }
+              lastStmHeartbeatTs = ts;
+            }
             prevStm = st;
           } else {
             stmSkippedChunks += 1;
@@ -777,7 +826,7 @@
             serverTime: ev.serverTimeText,
             text: faultStoryLine(ev, lastScreen),
             category: "fault",
-            coalesceKey: "",
+            coalesceKey: `fault|${ev.code}`,
           });
         });
 
@@ -842,10 +891,12 @@
       unsyncedRatio: normalized.length ? unsynced / normalized.length : 0,
       stmDecoded,
       stmSkippedChunks,
+      stmFrameCount: stmFrames.length,
       storyCount: storyLines.length,
+      decodeBuild: DECODE_BUILD,
     };
 
-    return { summary, storyLines, allRows, faultRows, normalized };
+    return { summary, storyLines, allRows, faultRows, stmFrames, normalized };
   }
 
   function filterPreviewRows(model, chip) {
@@ -861,5 +912,6 @@
     normalizeCode,
     isFaultCode,
     FAMILY_PREFIX,
+    DECODE_BUILD,
   };
 })(window);

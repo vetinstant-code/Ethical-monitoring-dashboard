@@ -1,4 +1,4 @@
-const CACHE_NAME = "vetinstant-dashboard-v50";
+const CACHE_NAME = "vetinstant-dashboard-v51";
 
 const APP_SHELL_FILES = [
   "./",
@@ -49,14 +49,9 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) =>
-      Promise.all(
-        cacheNames
-          .filter((cacheName) => cacheName !== CACHE_NAME)
-          .map((cacheName) => caches.delete(cacheName))
-      )
-    )
+      Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {

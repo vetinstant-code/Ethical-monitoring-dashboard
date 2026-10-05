@@ -513,7 +513,7 @@
       const capNote = payload.capped ? " · hit safety cap, may be incomplete" : "";
       setStatus(
         n
-          ? `Loaded ${n} event(s) · ${payload.ist_from} → ${payload.ist_to}${chunkNote}${capNote} · ${state.model.summary.faultCount} fault(s).`
+          ? `Loaded ${n} event(s) · ${payload.ist_from} → ${payload.ist_to}${chunkNote}${capNote} · ${state.model.summary.faultCount} fault(s) · STM frames ${state.model.summary.stmFrameCount || 0} · decoder ${state.model.summary.decodeBuild || global.VetDiagLogDecode?.DECODE_BUILD || "?"}.`
           : `No events in ${payload.ist_from} → ${payload.ist_to}. Try Flush, then Load again.`,
         n ? (payload.capped ? "warn" : "ok") : "warn"
       );
