@@ -48,6 +48,8 @@
       const headers = {
         "X-Device-Id": deviceId || this.deviceId,
         "ngrok-skip-browser-warning": "1",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
       };
       if (json != null) headers["Content-Type"] = "application/json";
       if (this._needsSession(endpoint, { skipSession })) {
@@ -64,6 +66,9 @@
           if (v != null && v !== "") url.searchParams.set(k, String(v));
         });
       }
+      if (method === "GET") {
+        url.searchParams.set("_t", String(Date.now()));
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       const headers = this._headers({ deviceId, sessionToken, skipSession, endpoint, json });
@@ -71,7 +76,7 @@
         clearTimeout(timer);
         throw new Error("Missing X-Session-Token. Sign in again.");
       }
-      const init = { method, headers, signal: controller.signal };
+      const init = { method, headers, signal: controller.signal, cache: "no-store" };
       if (json != null) init.body = JSON.stringify(json);
       try {
         const res = await fetch(url.toString(), init);
@@ -98,6 +103,7 @@
           if (v != null && v !== "") url.searchParams.set(k, String(v));
         });
       }
+      url.searchParams.set("_t", String(Date.now()));
       const headers = this._headers({ deviceId, sessionToken, skipSession, endpoint });
       if (this._needsSession(endpoint, { skipSession }) && !headers["X-Session-Token"]) {
         throw new Error("Missing X-Session-Token. Sign in again.");
@@ -109,6 +115,7 @@
           method: "GET",
           headers,
           signal: controller.signal,
+          cache: "no-store",
         });
         if (res.status === 401 && this._needsSession(endpoint, { skipSession })) {
           global.VetAuth?.onSessionExpired?.(await res.text().catch(() => ""));
@@ -350,7 +357,12 @@
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
-        const res = await fetch(url.toString(), { method: "GET", headers, signal: controller.signal });
+        const res = await fetch(url.toString(), {
+          method: "GET",
+          headers,
+          signal: controller.signal,
+          cache: "no-store",
+        });
         if (res.status === 401 && this._needsSession(endpoint, { skipSession })) {
           global.VetAuth?.onSessionExpired?.(await res.text().catch(() => ""));
           throw new Error("Session expired or invalid. Login again.");

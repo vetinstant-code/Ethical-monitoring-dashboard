@@ -4,7 +4,7 @@
  * Uses parallel fetches + progress percent for faster perceived load.
  */
 (function (global) {
-  const CONCURRENCY = 10;
+  const CONCURRENCY = 6;
   const REF_TEMPS_F = {
     GIZMO: 101.9,
     AVANI: 100.5,
@@ -35,6 +35,21 @@
   let pendingRefresh = false;
   let pendingForce = false;
   let bootstrapTimer = null;
+
+  async function fetchWithRetry(fn, retries = 2, delayMs = 350) {
+    let lastErr;
+    for (let i = 0; i <= retries; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastErr = err;
+        if (i < retries) {
+          await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+        }
+      }
+    }
+    throw lastErr;
+  }
 
   const istDateFormatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
@@ -74,7 +89,7 @@
   function parseApiTimestamp(raw) {
     const text = String(raw ?? "").trim();
     if (!text) return null;
-    const normalized = text.replace("Z", "+00:00");
+    const normalized = text.replace(" ", "T").replace("Z", "+00:00");
     if (/[+-]\d{2}:\d{2}$/.test(normalized)) {
       const d = new Date(normalized);
       return Number.isNaN(d.getTime()) ? null : d;
@@ -84,19 +99,25 @@
   }
 
   function sessionStartedDateIst(session) {
-    const parsed = parseApiTimestamp(session?.started_at ?? session?.created_at);
+    const parsed = parseApiTimestamp(
+      session?.started_at ?? session?.created_at ?? session?.timestamp ?? session?.start_time ?? session?.date
+    );
     if (!parsed) return null;
     return istDateFormatter.format(parsed);
   }
 
   function sessionTimeIst(session) {
-    const parsed = parseApiTimestamp(session?.started_at ?? session?.created_at);
+    const parsed = parseApiTimestamp(
+      session?.started_at ?? session?.created_at ?? session?.timestamp ?? session?.start_time ?? session?.date
+    );
     if (!parsed) return "";
     return istTimeFormatter.format(parsed);
   }
 
   function sessionHourIst(session) {
-    const parsed = parseApiTimestamp(session?.started_at ?? session?.created_at);
+    const parsed = parseApiTimestamp(
+      session?.started_at ?? session?.created_at ?? session?.timestamp ?? session?.start_time ?? session?.date
+    );
     if (!parsed) return null;
     const parts = new Intl.DateTimeFormat("en-GB", {
       timeZone: "Asia/Kolkata",
@@ -301,7 +322,9 @@
   }
 
   function summaryRecordedDateIst(row) {
-    const parsed = parseApiTimestamp(row?.recorded_at || row?.created_at || row?.timestamp);
+    const parsed = parseApiTimestamp(
+      row?.recorded_at || row?.created_at || row?.timestamp || row?.date
+    );
     if (!parsed) return null;
     return istDateFormatter.format(parsed);
   }
@@ -596,15 +619,51 @@
 
     try {
       const [sessionsResponse, summaries] = await Promise.all([
-        client.examSessions(petId),
-        client.petTemperatureSummary(petId).then(normalizeSummaries).catch(() => []),
+        fetchWithRetry(() => client.examSessions(petId)).catch(() => []),
+        fetchWithRetry(() => client.petTemperatureSummary(petId))
+          .then(normalizeSummaries)
+          .catch(() => []),
       ]);
       if (gen != null && gen !== syncGeneration) return local;
 
       const sessions = global.VetApiNormalize.normalizeSessions(sessionsResponse);
       const comparisonIds = sessionIdsForComparison(sessions, summaries, targetDate);
       const dateSessions = sessions.filter((s) => sessionStartedDateIst(s) === targetDate);
-      if (!dateSessions.length && !comparisonIds.length) return local;
+
+      // If no closed dateSessions were found but summaries exist for targetDate, synthesize sessions
+      if (!dateSessions.length && comparisonIds.length) {
+        comparisonIds.forEach((sid) => {
+          const matchingSum = summaries.find(
+            (r) => String(r.exam_session_id || r.examSessionId || "").trim() === sid
+          );
+          dateSessions.push({
+            id: sid,
+            exam_session_id: sid,
+            started_at: matchingSum?.recorded_at || matchingSum?.created_at,
+            created_at: matchingSum?.created_at || matchingSum?.recorded_at,
+          });
+        });
+      }
+
+      // If animal is in daily list but has no sessions or summaries yet today,
+      // record it as In Progress so it is never dropped from counts or recent cases.
+      if (!dateSessions.length && !comparisonIds.length) {
+        local.speciesId = String(petId);
+        local.statusCounts.inProgress += 1;
+        local.cases.push({
+          time: "—",
+          name: meta.name,
+          displayId: meta.displayId || "—",
+          id: petId,
+          species: meta.species,
+          tests: "Temperature",
+          statusLabel: "In Progress",
+          statusClass: "low",
+          timestamp: 0,
+          sessionId: "",
+        });
+        return local;
+      }
 
       const sessionById = {};
       sessions.forEach((s) => {
@@ -681,9 +740,22 @@
             statusClass,
             timestamp: ts,
           });
+
+          local.cases.push({
+            time: timeStr || "—",
+            name: meta.name,
+            displayId: meta.displayId || "—",
+            id: petId,
+            species: meta.species,
+            tests: Array.from(tests).join(", ") || "Temperature",
+            statusLabel,
+            statusClass,
+            timestamp: ts,
+            sessionId: String(sid || "").trim(),
+          });
       }
 
-      // Recent Cases is built only from comparison rows (exact same sessions).
+      // Recent Cases includes comparisons (richest clinical data)
       for (const row of local.comparisons) {
         const mean = row.incomplete ? null : row.metrics?.mean;
         let statusLabel = "Completed";
@@ -693,10 +765,11 @@
           statusClass = "critical";
         }
         const d = row.timestamp ? new Date(row.timestamp) : null;
-        const timeStr = d
-          ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })
-          : "—";
-        local.cases.push({
+        const timeStr = d ? istTimeFormatter.format(d) : "—";
+        const existingIdx = local.cases.findIndex(
+          (c) => c.sessionId && c.sessionId === String(row.sessionId).trim()
+        );
+        const compCase = {
           time: timeStr,
           name: row.name,
           displayId: row.displayId || "—",
@@ -707,7 +780,12 @@
           statusClass,
           timestamp: row.timestamp || 0,
           sessionId: String(row.sessionId || "").trim(),
-        });
+        };
+        if (existingIdx >= 0) {
+          local.cases[existingIdx] = compCase;
+        } else {
+          local.cases.push(compCase);
+        }
       }
     } catch (err) {
       console.warn(`Failed sessions for pet ${petId}`, err);
@@ -897,11 +975,17 @@
 
       setProgress(8, "Loading today’s animals…");
 
-      const [dailyResp, yResp] = await Promise.all([
+      const [dailyResp, yResp, rawPets] = await Promise.all([
         client.dailyPets(targetDate).catch(() => null),
         client.dailyPets(addDaysIso(targetDate, -1)).catch(() => null),
+        store.pets.length ? Promise.resolve(null) : client.listPets().catch(() => []),
       ]);
       if (gen !== syncGeneration) return;
+
+      if (rawPets && rawPets.length) {
+        store.pets = global.VetApiNormalize.normalizePets(rawPets);
+      }
+      store.petMeta = {};
 
       let resolved;
       const hasDailyPets = (dailyResp?.pets || []).length > 0;
@@ -911,22 +995,15 @@
           list: dailyResp.pets.map(dailyPetRowFrom),
           source: "daily-pets",
         };
-        client
-          .listPets()
-          .then((rawPets) => {
-            if (gen !== syncGeneration) return;
-            store.pets = global.VetApiNormalize.normalizePets(rawPets);
-          })
-          .catch(() => {});
-        store.petMeta = {};
       } else {
         setProgress(12, supplementToday
           ? "Checking today’s sessions and temperatures…"
           : "Scanning exam sessions and temperatures…");
-        const rawPets = await client.listPets();
-        if (gen !== syncGeneration) return;
-        store.pets = global.VetApiNormalize.normalizePets(rawPets);
-        store.petMeta = {};
+        if (!store.pets.length) {
+          const freshPets = await client.listPets().catch(() => []);
+          if (gen !== syncGeneration) return;
+          store.pets = global.VetApiNormalize.normalizePets(freshPets);
+        }
         resolved = await resolvePetsForDate(
           client,
           targetDate,
@@ -1033,8 +1110,9 @@
         return String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
       });
 
-      // Recent Cases = exact same sessions as Reference vs ExamD (1:1).
-      const recentCases = comparisons.map((row) => {
+      // Recent Cases: Merge comparison rows with session cases and daily scheduled animals
+      const caseMap = new Map();
+      comparisons.forEach((row) => {
         const mean = row.incomplete ? null : row.metrics?.mean;
         let statusLabel = "Completed";
         let statusClass = "stable";
@@ -1043,10 +1121,8 @@
           statusClass = "critical";
         }
         const d = row.timestamp ? new Date(row.timestamp) : null;
-        const timeStr = d
-          ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })
-          : "—";
-        return {
+        const timeStr = d ? istTimeFormatter.format(d) : "—";
+        caseMap.set(String(row.sessionId || row.id), {
           time: timeStr,
           name: row.name,
           displayId: row.displayId || "—",
@@ -1057,22 +1133,64 @@
           statusClass,
           timestamp: row.timestamp || 0,
           sessionId: String(row.sessionId || "").trim(),
-        };
-      }).sort((a, b) => b.timestamp - a.timestamp);
+        });
+      });
+
+      cases.forEach((c) => {
+        const key = String(c.sessionId || c.id);
+        if (!caseMap.has(key)) {
+          caseMap.set(key, c);
+        }
+      });
+
+      dailyPetsList.forEach((p) => {
+        const petId = String(p.pet_id || p.id);
+        const hasPet = Array.from(caseMap.values()).some((c) => String(c.id) === petId);
+        if (!hasPet) {
+          const meta = petMetaOf(petId, p, p);
+          caseMap.set(`daily-${petId}`, {
+            time: "—",
+            name: meta.name,
+            displayId: meta.displayId || "—",
+            id: petId,
+            species: meta.species,
+            tests: "Temperature",
+            statusLabel: "In Progress",
+            statusClass: "low",
+            timestamp: 0,
+            sessionId: "",
+          });
+        }
+      });
+
+      const recentCases = Array.from(caseMap.values()).sort((a, b) => {
+        if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
+        return (a.name || "").localeCompare(b.name || "");
+      });
 
       const hourly = Object.keys(hourlyMap)
         .map((h) => ({ label: `${String(h).padStart(2, "0")}:00`, count: hourlyMap[h] }))
         .sort((a, b) => a.label.localeCompare(b.label));
 
       const speciesCounts = {};
+      dailyPetsList.forEach((p) => {
+        const meta = petMetaOf(p.pet_id || p.id, p, p);
+        speciesCounts[meta.species] = (speciesCounts[meta.species] || 0) + 1;
+      });
       Object.entries(speciesPetIds).forEach(([species, ids]) => {
-        speciesCounts[species] = ids.size;
+        if (!speciesCounts[species] || ids.size > speciesCounts[species]) {
+          speciesCounts[species] = ids.size;
+        }
       });
       if (!Object.keys(speciesCounts).length) Object.assign(speciesCounts, earlySpecies);
 
-      // KPI counts all day's activity pets; Recent Cases is comparison-filtered above.
-      const uniquePetIds = new Set(activities.map((a) => a.id));
-      const totalToday = uniquePetIds.size || dailyPetsList.length;
+      // KPI counts all day's activity pets, comparisons, and daily scheduled pets
+      const allTodayPetIds = new Set([
+        ...dailyPetsList.map((p) => String(p.pet_id || p.id)),
+        ...activities.map((a) => String(a.id)),
+        ...comparisons.map((c) => String(c.id)),
+      ]);
+      const totalToday = Math.max(allTodayPetIds.size, dailyPetsList.length);
 
       const elVitals = document.getElementById("kpi-vitals-today");
       if (elVitals) elVitals.textContent = String(totalToday);
