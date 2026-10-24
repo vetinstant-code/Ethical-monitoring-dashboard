@@ -109,7 +109,14 @@
     const slotMap = { 1: "t1", 2: "t2", 3: "t3" };
     const colMap = { ambient: 0, t_ambient: 0, forehead: 1, tf: 1, body: 2, tbody: 2 };
 
-    (readings || []).forEach((item) => {
+    const sorted = [...(readings || [])].sort((a, b) => {
+      const ta = rowDatetimeForSort(a).getTime();
+      const tb = rowDatetimeForSort(b).getTime();
+      if (ta !== tb) return ta - tb;
+      return (Number(a.id || a.reading_id || 0) || 0) - (Number(b.id || b.reading_id || 0) || 0);
+    });
+
+    sorted.forEach((item) => {
       const sensor = String(item.sensor_type || item.type || item.sensor || "").trim().toLowerCase();
       if (["reference_thermometer", "reference", "tmp", "rectal_sensor", "rectal"].includes(sensor)) return;
       const readingNo = Number(item.reading_number || 0);
@@ -169,7 +176,14 @@
 
   function refsFromRawReadings(readings) {
     const refs = [0.0, 0.0, 0.0];
-    (readings || []).forEach((item) => {
+    const sorted = [...(readings || [])].sort((a, b) => {
+      const ta = rowDatetimeForSort(a).getTime();
+      const tb = rowDatetimeForSort(b).getTime();
+      if (ta !== tb) return ta - tb;
+      return (Number(a.id || a.reading_id || 0) || 0) - (Number(b.id || b.reading_id || 0) || 0);
+    });
+
+    sorted.forEach((item) => {
       const sensor = String(item.sensor_type || item.type || item.sensor || "").trim().toLowerCase();
       if (!["reference_thermometer", "reference"].includes(sensor) && !sensor.includes("reference")) return;
       const readingNo = Number(item.reading_number || 0);
@@ -269,6 +283,14 @@
         }
       }
     }
+
+    const sessText = String(row.session_id || "");
+    const sessMatch = sessText.match(/_(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})(20\d{2})_/);
+    if (sessMatch) {
+      const [, hh, mm, ss, d, mo, y] = sessMatch;
+      return new Date(parseInt(y), parseInt(mo) - 1, parseInt(d), parseInt(hh), parseInt(mm), parseInt(ss));
+    }
+
     return new Date(0); // Minimum date
   }
 
@@ -835,7 +857,11 @@
       (r) => String(r.exam_session_id || r.examSessionId || "").trim() === sid && predicate(r)
     );
     if (!matches.length) return null;
-    matches.sort((a, b) => rowDatetimeForSort(b) - rowDatetimeForSort(a));
+    matches.sort((a, b) => {
+      const dtDiff = rowDatetimeForSort(b).getTime() - rowDatetimeForSort(a).getTime();
+      if (dtDiff !== 0) return dtDiff;
+      return String(b.session_id || "").localeCompare(String(a.session_id || ""));
+    });
     return matches[0] || null;
   }
 
@@ -1932,7 +1958,11 @@
           if (!sid) return null;
           const matches = summaryRows.filter((r) => String(r.exam_session_id || r.examSessionId || "").trim() === sid && predicate(r));
           if (!matches.length) return null;
-          matches.sort((a, b) => rowDatetimeForSort(b) - rowDatetimeForSort(a));
+          matches.sort((a, b) => {
+            const dtDiff = rowDatetimeForSort(b).getTime() - rowDatetimeForSort(a).getTime();
+            if (dtDiff !== 0) return dtDiff;
+            return String(b.session_id || "").localeCompare(String(a.session_id || ""));
+          });
           return matches[0] || null;
         }
 

@@ -262,7 +262,21 @@
   }
 
   function summaryRecordedAt(row) {
-    return row?.recorded_at || row?.created_at || row?.timestamp || "";
+    return row?.recorded_at || row?.timestamp || row?.created_at || row?.date || "";
+  }
+
+  function summaryRecordedAtTime(row) {
+    const raw = summaryRecordedAt(row);
+    const parsed = parseTimestamp(raw);
+    if (parsed) return parsed.getTime();
+    const sid = String(row?.session_id || "");
+    const m = sid.match(/_(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})(20\d{2})_/);
+    if (m) {
+      const [, hh, mm, ss, d, mo, y] = m;
+      const dt = new Date(`${y}-${mo}-${d}T${hh}:${mm}:${ss}+05:30`);
+      if (!Number.isNaN(dt.getTime())) return dt.getTime();
+    }
+    return 0;
   }
 
   function pickSummary(summaries, examSessionId, { want } = {}) {
@@ -274,7 +288,11 @@
       ? filtered.filter((r) => (want === "ir" ? /ir|mlx|90614|90632/.test(sensorKeyOfSummary(r)) : /tmp|rectal/.test(sensorKeyOfSummary(r))))
       : filtered;
     if (!wanted.length) return null;
-    wanted.sort((a, b) => (parseTimestamp(summaryRecordedAt(b))?.getTime?.() || 0) - (parseTimestamp(summaryRecordedAt(a))?.getTime?.() || 0));
+    wanted.sort((a, b) => {
+      const diff = summaryRecordedAtTime(b) - summaryRecordedAtTime(a);
+      if (diff !== 0) return diff;
+      return String(b?.session_id || "").localeCompare(String(a?.session_id || ""));
+    });
     return wanted[0] || null;
   }
 

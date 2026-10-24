@@ -192,19 +192,35 @@
     return s === "tmp" || /rectal/.test(s);
   }
 
+  function summarySortTimestamp(row) {
+    if (!row || typeof row !== "object") return 0;
+    const raw = row.recorded_at || row.timestamp || row.created_at || row.date;
+    const parsed = parseApiTimestamp(raw);
+    if (parsed) return parsed.getTime();
+    const sid = String(row.session_id || "");
+    const m = sid.match(/_(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})(20\d{2})_/);
+    if (m) {
+      const [, hh, mm, ss, d, mo, y] = m;
+      const dt = new Date(`${y}-${mo}-${d}T${hh}:${mm}:${ss}+05:30`);
+      if (!Number.isNaN(dt.getTime())) return dt.getTime();
+    }
+    return 0;
+  }
+
   function pickSessionSummary(summaries, examSessionId, wantIr) {
     const sid = String(examSessionId || "").trim();
     if (!sid) return null;
-    const matches = summaries.filter((r) => {
+    const matches = (summaries || []).filter((r) => {
       const rid = String(r.exam_session_id || r.examSessionId || "").trim();
       if (rid !== sid) return false;
       return wantIr ? isIrSummaryRow(r) : isRectalSummaryRow(r);
     });
     if (!matches.length) return null;
     matches.sort((a, b) => {
-      const ta = parseApiTimestamp(a.recorded_at || a.created_at)?.getTime() || 0;
-      const tb = parseApiTimestamp(b.recorded_at || b.created_at)?.getTime() || 0;
-      return tb - ta;
+      const tb = summarySortTimestamp(b);
+      const ta = summarySortTimestamp(a);
+      if (tb !== ta) return tb - ta;
+      return String(b.session_id || "").localeCompare(String(a.session_id || ""));
     });
     return matches[0] || null;
   }
@@ -360,8 +376,8 @@
 
     const s = sessionById[sid];
     const ts =
+      summarySortTimestamp(primary) ||
       parseApiTimestamp(s?.started_at || s?.created_at)?.getTime() ||
-      parseApiTimestamp(primary?.recorded_at || primary?.created_at)?.getTime() ||
       0;
 
     return {
@@ -729,30 +745,38 @@
             statusClass = "low";
           }
 
-          const ts = parseApiTimestamp(s.started_at || s.created_at)?.getTime() || 0;
+          const ts =
+            summarySortTimestamp(irSummary || rectSummary) ||
+            parseApiTimestamp(s.started_at || s.created_at)?.getTime() ||
+            0;
 
-          local.activities.push({
-            time: timeStr || "—",
-            name: meta.name,
-            id: petId,
-            temp: tempVal != null ? `${tempVal.toFixed(1)}°C` : "No Reading",
-            statusLabel,
-            statusClass,
-            timestamp: ts,
-          });
+          // If this session is completely empty (no temp & no audio), and other sessions
+          // with readings exist for this animal today, do not mask real tests with 'No Reading'
+          const hasVitals = tempVal != null || tests.size > 0;
+          if (hasVitals || dateSessions.length === 1) {
+            local.activities.push({
+              time: timeStr || "—",
+              name: meta.name,
+              id: petId,
+              temp: tempVal != null ? `${tempVal.toFixed(1)}°C` : "No Reading",
+              statusLabel,
+              statusClass,
+              timestamp: ts,
+            });
 
-          local.cases.push({
-            time: timeStr || "—",
-            name: meta.name,
-            displayId: meta.displayId || "—",
-            id: petId,
-            species: meta.species,
-            tests: Array.from(tests).join(", ") || "Temperature",
-            statusLabel,
-            statusClass,
-            timestamp: ts,
-            sessionId: String(sid || "").trim(),
-          });
+            local.cases.push({
+              time: timeStr || "—",
+              name: meta.name,
+              displayId: meta.displayId || "—",
+              id: petId,
+              species: meta.species,
+              tests: Array.from(tests).join(", ") || "Temperature",
+              statusLabel,
+              statusClass,
+              timestamp: ts,
+              sessionId: String(sid || "").trim(),
+            });
+          }
       }
 
       // Recent Cases includes comparisons (richest clinical data)
@@ -1103,16 +1127,36 @@
       setProgress(97, "Rendering…");
 
       activities.sort((a, b) => b.timestamp - a.timestamp);
+      // Sort comparisons newest first so latest retake is always prioritized
       comparisons.sort((a, b) => {
-        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+        if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
         const byName = (a.name || "").localeCompare(b.name || "");
         if (byName) return byName;
-        return String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
+        return String(b.sessionId || "").localeCompare(String(a.sessionId || ""));
+      });
+
+      // Dashboard Comparison Table: For each animal on this date, show the latest retook session
+      const latestComparisonsByPet = new Map();
+      comparisons.forEach((row) => {
+        const petKey = String(row.id || "");
+        if (!latestComparisonsByPet.has(petKey)) {
+          latestComparisonsByPet.set(petKey, row);
+        } else {
+          const cur = latestComparisonsByPet.get(petKey);
+          if ((row.timestamp || 0) > (cur.timestamp || 0)) {
+            latestComparisonsByPet.set(petKey, row);
+          }
+        }
+      });
+      const dashboardComparisons = Array.from(latestComparisonsByPet.values()).sort((a, b) => {
+        const byName = (a.name || "").localeCompare(b.name || "");
+        if (byName) return byName;
+        return (b.timestamp || 0) - (a.timestamp || 0);
       });
 
       // Recent Cases: Merge comparison rows with session cases and daily scheduled animals
       const caseMap = new Map();
-      comparisons.forEach((row) => {
+      dashboardComparisons.forEach((row) => {
         const mean = row.incomplete ? null : row.metrics?.mean;
         let statusLabel = "Completed";
         let statusClass = "stable";
@@ -1122,7 +1166,7 @@
         }
         const d = row.timestamp ? new Date(row.timestamp) : null;
         const timeStr = d ? istTimeFormatter.format(d) : "—";
-        caseMap.set(String(row.sessionId || row.id), {
+        caseMap.set(String(row.id), {
           time: timeStr,
           name: row.name,
           displayId: row.displayId || "—",
@@ -1241,7 +1285,7 @@
         statusCounts,
         completedAllTime: store.pets.length,
         cases: recentCases,
-        comparisons,
+        comparisons: dashboardComparisons,
         notes,
       };
 
