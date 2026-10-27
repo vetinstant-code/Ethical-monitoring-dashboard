@@ -426,6 +426,19 @@
                 </div>
                 <p class="case-root-cause-desc">${escapeHtml(verdict.message || "")}</p>
                 ${verdict.evidence ? `<div class="case-root-cause-evidence"><span>${escapeHtml(verdict.evidence)}</span></div>` : ""}
+                ${Array.isArray(verdict.auditItems) && verdict.auditItems.length ? `
+                  <div class="case-root-cause-audit">
+                    <div class="case-audit-title">📡 Subsystem Telemetry & Command Audit:</div>
+                    <div class="case-audit-grid">
+                      ${verdict.auditItems.map(item => `
+                        <div class="case-audit-cell ${item.highlight || ''}">
+                          <span class="audit-cell-label">${escapeHtml(item.label)}</span>
+                          <span class="audit-cell-val">${escapeHtml(item.val)}</span>
+                        </div>
+                      `).join("")}
+                    </div>
+                  </div>
+                ` : ""}
                 <div class="case-root-cause-actions">
                   <button type="button" class="btn-banner-excel" data-pet-id="${escapeHtml(c.id)}" title="Download complete forensic decoded Excel">
                     <span>📊 Download Decoded Log (.xlsx)</span>
@@ -967,6 +980,19 @@
           </div>
           <p class="case-root-cause-desc">${escapeHtml(verdict.message || "")}</p>
           ${verdict.evidence ? `<div class="case-root-cause-evidence"><span>${escapeHtml(verdict.evidence)}</span></div>` : ""}
+          ${Array.isArray(verdict.auditItems) && verdict.auditItems.length ? `
+            <div class="case-root-cause-audit">
+              <div class="case-audit-title">📡 Subsystem Telemetry & Command Audit:</div>
+              <div class="case-audit-grid">
+                ${verdict.auditItems.map(item => `
+                  <div class="case-audit-cell ${item.highlight || ''}">
+                    <span class="audit-cell-label">${escapeHtml(item.label)}</span>
+                    <span class="audit-cell-val">${escapeHtml(item.val)}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          ` : ""}
           <div class="case-root-cause-actions">
             <button type="button" class="btn-banner-excel" data-pet-id="${escapeHtml(petId)}" title="Download complete forensic decoded Excel">
               <span>📊 Download Decoded Log (.xlsx)</span>
