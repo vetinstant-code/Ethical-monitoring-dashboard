@@ -397,6 +397,43 @@
             </div>`;
         }
 
+        let diagHtml = "";
+        if (!isComplete) {
+          const verdict = global.VetDiagInvestigator?.getVerdict?.(c.id, c.sessionId, date);
+          const prog = global.VetDiagInvestigator?.getProgress?.(c.id);
+
+          if (verdict) {
+            diagHtml = `
+              <div class="case-root-cause-banner case-root-cause-banner--${verdict.type}">
+                <div class="case-root-cause-header">
+                  <span class="case-root-cause-icon">${verdict.icon || "ℹ️"}</span>
+                  <div class="case-root-cause-titles">
+                    <span class="case-root-cause-tag ${verdict.badgeClass || 'verdict-skipped'}">${escapeHtml(verdict.tag || "Diagnosis")}</span>
+                    <strong class="case-root-cause-title">${escapeHtml(verdict.title || "Root Cause")}</strong>
+                  </div>
+                </div>
+                <p class="case-root-cause-desc">${escapeHtml(verdict.message || "")}</p>
+                ${verdict.evidence ? `<div class="case-root-cause-evidence"><span>${escapeHtml(verdict.evidence)}</span></div>` : ""}
+              </div>`;
+          } else {
+            const currentPct = prog?.pct || 15;
+            const currentStage = prog?.stage || "Scanning device telemetry…";
+            diagHtml = `
+              <div class="case-diag-progress-block" id="diag-progress-${escapeHtml(c.id)}" data-pet-id="${escapeHtml(c.id)}">
+                <div class="diag-progress-header">
+                  <span class="diag-progress-label">
+                    <span class="diag-spinner"></span>
+                    <span class="diag-progress-text">Investigating Root Cause: ${escapeHtml(currentStage)}</span>
+                  </span>
+                  <span class="diag-progress-pct">${currentPct}%</span>
+                </div>
+                <div class="diag-progress-track">
+                  <div class="diag-progress-fill" style="width:${currentPct}%"></div>
+                </div>
+              </div>`;
+          }
+        }
+
         return `
           <article class="case-detail-card" data-pet-id="${escapeHtml(c.id)}">
             <div class="case-card-header">
@@ -455,6 +492,7 @@
             </div>
 
             ${alertBanner}
+            ${diagHtml}
 
             <div class="case-card-actions">
               <button type="button" class="btn-case-history" data-pet-id="${escapeHtml(c.id)}">
@@ -469,6 +507,9 @@
     root.innerHTML = `
       ${tabsHtml}
       <div class="case-cards-list">${cardsHtml}</div>`;
+
+    // Enqueue incomplete cases for background root cause investigation
+    global.VetDiagInvestigator?.enqueueCases?.(uniqueCases, date);
   }
 
   function statusFromTemp(temp, species = "dog") {
@@ -839,6 +880,38 @@
     window.addEventListener("vet:dashboard-filters-changed", () => {
       const { name, filter } = parseHash();
       if (name === "vitals-today") renderVitalsTodayPage(filter || "all");
+    });
+
+    window.addEventListener("vet:diag-progress", (e) => {
+      const { petId, pct, stage } = e.detail || {};
+      if (!petId) return;
+      const el = document.getElementById(`diag-progress-${petId}`);
+      if (!el) return;
+      const txt = el.querySelector(".diag-progress-text");
+      const pctEl = el.querySelector(".diag-progress-pct");
+      const fill = el.querySelector(".diag-progress-fill");
+      if (txt) txt.textContent = `Investigating Root Cause: ${stage || "Analyzing…"}`;
+      if (pctEl) pctEl.textContent = `${pct || 0}%`;
+      if (fill) fill.style.width = `${pct || 0}%`;
+    });
+
+    window.addEventListener("vet:diag-complete", (e) => {
+      const { petId, verdict } = e.detail || {};
+      if (!petId || !verdict) return;
+      const el = document.getElementById(`diag-progress-${petId}`);
+      if (!el) return;
+      el.outerHTML = `
+        <div class="case-root-cause-banner case-root-cause-banner--${verdict.type}">
+          <div class="case-root-cause-header">
+            <span class="case-root-cause-icon">${verdict.icon || "ℹ️"}</span>
+            <div class="case-root-cause-titles">
+              <span class="case-root-cause-tag ${verdict.badgeClass || 'verdict-skipped'}">${escapeHtml(verdict.tag || "Diagnosis")}</span>
+              <strong class="case-root-cause-title">${escapeHtml(verdict.title || "Root Cause")}</strong>
+            </div>
+          </div>
+          <p class="case-root-cause-desc">${escapeHtml(verdict.message || "")}</p>
+          ${verdict.evidence ? `<div class="case-root-cause-evidence"><span>${escapeHtml(verdict.evidence)}</span></div>` : ""}
+        </div>`;
     });
 
     window.addEventListener("hashchange", () => {

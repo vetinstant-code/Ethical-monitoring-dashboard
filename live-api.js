@@ -1504,6 +1504,11 @@
       if (!fetchAudio && recentCases.length) {
         enrichAudioCounts(client, recentCases, testCounts, gen, targetDate).catch(() => {});
       }
+
+      // Kick off background diagnostic investigation for any incomplete cases
+      if (recentCases.length) {
+        global.VetDiagInvestigator?.enqueueCases?.(recentCases, targetDate, activeDeviceId);
+      }
     } catch (err) {
       console.error("[Live API Sync Failed]", err);
       if (gen !== syncGeneration) return;
