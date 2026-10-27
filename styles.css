@@ -2739,6 +2739,27 @@ body.reports-mode .page-back-btn {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
+.cv-summary-box.kpi-card-clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.cv-summary-box.kpi-card-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
+.cv-summary-box.kpi-card-clickable:active {
+  transform: translateY(0);
+}
+
+.cv-summary-box.kpi-card-clickable:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .cv-summary-box span {
   display: block;
   font-size: 11px;
@@ -3605,5 +3626,302 @@ body.reports-mode .page-back-btn {
 
   .login-logo-field {
     transform: none !important;
+  }
 }
+
+/* =========================================================================
+   Vitals Today / Drill-Down Checklist Cards
+   ========================================================================= */
+
+.vitals-tabs-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.vitals-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.vitals-tab-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #1e293b;
+}
+
+.vitals-tab-btn.is-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.vitals-tab-btn.vitals-tab-btn--success.is-active {
+  background: #16a34a;
+  border-color: #16a34a;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
+}
+
+.vitals-tab-btn.vitals-tab-btn--incomplete.is-active {
+  background: #dc2626;
+  border-color: #dc2626;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
+}
+
+.vitals-tab-btn.is-active .vitals-tab-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.vitals-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.case-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.case-detail-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.case-detail-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.case-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.case-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.case-card-avatar {
+  font-size: 24px;
+  line-height: 1;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.case-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.case-card-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.case-card-time {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.case-card-meta {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.case-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.case-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.case-check-item.pass {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: #f0fdf4;
+}
+
+.case-check-item.fail {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: #fef2f2;
+}
+
+.case-check-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.case-check-item.pass .case-check-icon {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.case-check-item.fail .case-check-icon {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.case-check-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.case-check-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.case-check-status {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+.case-check-item.pass .case-check-status {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.case-check-item.fail .case-check-status {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.case-protocol-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 14px;
+}
+
+.case-protocol-alert--incomplete {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.case-protocol-alert--complete {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.case-protocol-alert--pending {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.case-alert-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.case-alert-body {
+  flex: 1;
+}
+
+.case-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-case-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-case-history:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.btn-case-history svg {
+  transition: transform 0.15s ease;
+}
+
+.btn-case-history:hover svg {
+  transform: translateX(2px);
+}
+
 

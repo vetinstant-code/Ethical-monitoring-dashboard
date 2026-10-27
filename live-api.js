@@ -697,6 +697,7 @@
           displayId: meta.displayId || "—",
           id: petId,
           species: meta.species,
+          breed: meta.breed || "",
           tests: "Pending",
           statusLabel: protocolEval.statusLabel,
           statusClass: protocolEval.statusClass,
@@ -866,6 +867,7 @@
               displayId: meta.displayId || "—",
               id: petId,
               species: meta.species,
+              breed: meta.breed || "",
               tests: Array.from(tests).join(", ") || "Temperature",
               temp: tempVal != null ? `${tempVal.toFixed(1)}°C` : "—",
               statusLabel,
@@ -920,6 +922,7 @@
           displayId: row.displayId || "—",
           id: row.id,
           species: row.species,
+          breed: row.breed || meta.breed || "",
           tests: testsDesc,
           temp: mean != null ? `${mean.toFixed(1)}°C` : (existingCase?.temp || "—"),
           statusLabel,
@@ -1011,6 +1014,9 @@
 
   function renderIfChanged(payload, { force = false, stage = "final", targetDate = null } = {}) {
     if (!payload) return false;
+    if (stage === "final" || !store.lastPayload) {
+      store.lastPayload = payload;
+    }
     const dateKey = targetDate || getDashboardDate();
 
     // Early skeleton: paint UI but do not lock lastFingerprint (final must always win).
@@ -1026,6 +1032,11 @@
     store.lastFingerprint = fp;
     store.lastDate = dateKey;
     global.VetDashboardHome?.render?.(payload);
+    try {
+      window.dispatchEvent(new CustomEvent("vet:cases-updated", { detail: payload }));
+    } catch {
+      /* ignore */
+    }
     return true;
   }
 
@@ -1657,5 +1668,7 @@
     resolvePetsForDate,
     getPets: () => store.pets.slice(),
     getDailyPetsList: (d) => (!d || d === getDashboardDate() ? (store.dailyPetsList || []).slice() : null),
+    getLastPayload: () => store.lastPayload || null,
+    getLastCases: () => (store.lastPayload?.cases || []).slice(),
   };
 })(window);

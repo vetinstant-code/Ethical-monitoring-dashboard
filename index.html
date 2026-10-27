@@ -19,7 +19,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=63" />
+  <link rel="stylesheet" href="styles.css?v=64" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -343,15 +343,15 @@
           <article class="cv-card cv-summary-card">
             <h3 class="cv-card-title">Clinical Validation Summary (Today)</h3>
             <div class="cv-summary-grid">
-              <div class="cv-summary-box kpi-card-clickable" id="cv-box-tested">
+              <div class="cv-summary-box kpi-card-clickable" id="cv-box-tested" role="button" tabindex="0" title="View all animals tested today">
                 <span>Animals Tested</span>
                 <strong id="cv-sum-tested">0</strong>
               </div>
-              <div class="cv-summary-box">
+              <div class="cv-summary-box kpi-card-clickable" id="cv-box-success" role="button" tabindex="0" title="View successful cases today">
                 <span>Successful Cases</span>
                 <strong id="cv-sum-success">0</strong>
               </div>
-              <div class="cv-summary-box">
+              <div class="cv-summary-box kpi-card-clickable" id="cv-box-failed" role="button" tabindex="0" title="View incomplete cases today">
                 <span>Incomplete Cases</span>
                 <strong id="cv-sum-failed">0</strong>
               </div>
@@ -764,23 +764,23 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="config.api.js?v=63"></script>
-  <script src="api-client.js?v=63"></script>
-  <script src="auth.js?v=63"></script>
-  <script src="api-adapter.js?v=63"></script>
-  <script src="app-filters.js?v=63"></script>
-  <script src="excel-generator.js?v=63"></script>
-  <script src="vitals-status-engine.js?v=63"></script>
-  <script src="dashboard-home.js?v=63"></script>
-  <script src="live-api.js?v=63"></script>
-  <script src="app-pages.js?v=63"></script>
-  <script src="reports-page.js?v=63"></script>
-  <script src="login-fx.js?v=63"></script>
+  <script src="config.api.js?v=64"></script>
+  <script src="api-client.js?v=64"></script>
+  <script src="auth.js?v=64"></script>
+  <script src="api-adapter.js?v=64"></script>
+  <script src="app-filters.js?v=64"></script>
+  <script src="excel-generator.js?v=64"></script>
+  <script src="vitals-status-engine.js?v=64"></script>
+  <script src="dashboard-home.js?v=64"></script>
+  <script src="live-api.js?v=64"></script>
+  <script src="app-pages.js?v=64"></script>
+  <script src="reports-page.js?v=64"></script>
+  <script src="login-fx.js?v=64"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("./service-worker.js?v=63")
+          .register("./service-worker.js?v=64")
           .then((reg) => {
             // Check for service worker updates immediately on page load
             reg.update();

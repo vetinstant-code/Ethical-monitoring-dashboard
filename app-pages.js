@@ -43,14 +43,17 @@
   function parseHash() {
     const raw = (location.hash || "#/").replace(/^#/, "") || "/";
     const parts = raw.split("/").filter(Boolean);
-    if (!parts.length) return { name: "dashboard", petId: null };
-    if (parts[0] === "animals") return { name: "animals", petId: null };
-    if (parts[0] === "vitals-today") return { name: "vitals-today", petId: null };
-    if (parts[0] === "reports") return { name: "reports", petId: null };
-    if (parts[0] === "animal" && parts[1]) {
-      return { name: "history", petId: decodeURIComponent(parts[1]) };
+    if (!parts.length) return { name: "dashboard", petId: null, filter: null };
+    if (parts[0] === "animals") return { name: "animals", petId: null, filter: null };
+    if (parts[0] === "vitals-today") {
+      const filter = parts[1] || "all";
+      return { name: "vitals-today", petId: null, filter };
     }
-    return { name: "dashboard", petId: null };
+    if (parts[0] === "reports") return { name: "reports", petId: null, filter: null };
+    if (parts[0] === "animal" && parts[1]) {
+      return { name: "history", petId: decodeURIComponent(parts[1]), filter: null };
+    }
+    return { name: "dashboard", petId: null, filter: null };
   }
 
   function navigate(path) {
@@ -205,62 +208,267 @@
     }
   }
 
-  async function renderVitalsTodayPage() {
+  async function renderVitalsTodayPage(filter = "all") {
     const root = document.getElementById("vitals-today-root");
     const sub = document.getElementById("vitals-today-subtitle");
     const date = getSelectedDate();
-    if (sub) sub.textContent = `All animals tested on ${date}. Select one to view temperature history.`;
     if (!root) return;
-    root.innerHTML = `<p class="empty-state">Loading today’s animals…</p>`;
 
-    try {
-      const client = await ensureClient();
-      let pets = [];
-      const cached = global.VetLiveApi?.getDailyPetsList?.(date);
-      if (Array.isArray(cached) && cached.length) {
-        pets = cached;
+    const normalizedFilter = String(filter || "all").toLowerCase();
+
+    if (sub) {
+      if (normalizedFilter === "successful") {
+        sub.textContent = `Successful cases on ${date} meeting full validation protocol. Select an animal to view detailed history.`;
+      } else if (normalizedFilter === "incomplete") {
+        sub.textContent = `Incomplete cases on ${date}. Detailed checklist shows which measurements (audio or temperature) are missing.`;
       } else {
-        const resp = await client.dailyPets(date).catch(() => null);
-        pets = (resp?.pets || []).map((p) => ({
-          ...p,
-          pet_id: p.pet_id || p.id,
-          id: p.pet_id || p.id,
-          name: p.pet_name || p.name,
-          pet_name: p.pet_name || p.name,
-        }));
+        sub.textContent = `All animals tested on ${date}. Review protocol completion status and select any animal for detailed history.`;
       }
-
-      if (!pets.length) {
-        const allPets = await loadAllPets(client);
-        const resolved = global.VetLiveApi?.resolvePetsForDate
-          ? await global.VetLiveApi.resolvePetsForDate(client, date, allPets)
-          : { list: [], source: "none" };
-        pets = resolved.list || [];
-      }
-      if (!pets.length) {
-        root.innerHTML = `<p class="empty-state">No animals recorded on ${escapeHtml(date)}.</p>`;
-        return;
-      }
-
-      const rows = pets
-        .slice()
-        .sort((a, b) => petNameOf(a).localeCompare(petNameOf(b)))
-        .map((pet) => {
-          const id = petIdOf(pet);
-          return `
-            <button type="button" class="animal-list-row" data-pet-id="${escapeHtml(id)}">
-              <span class="animal-list-name">${escapeHtml(petNameOf(pet))}</span>
-              <span class="animal-list-meta">${escapeHtml(speciesOf(pet))} · ${escapeHtml(breedOf(pet))} · ID: ${escapeHtml(id.slice(0, 10))}…</span>
-            </button>`;
-        })
-        .join("");
-
-      root.innerHTML = `
-        <div class="animal-list-summary">${pets.length} animal${pets.length === 1 ? "" : "s"} checked</div>
-        <div class="animal-list">${rows}</div>`;
-    } catch (err) {
-      root.innerHTML = `<p class="empty-state">Failed to load vitals: ${escapeHtml(err.message || err)}</p>`;
     }
+
+    let cases = global.VetLiveApi?.getLastCases?.() || [];
+
+    if (!cases.length) {
+      root.innerHTML = `
+        <div class="empty-state">
+          <p>Loading today’s clinical validation cases…</p>
+        </div>`;
+      if (global.VetLiveApi?.refreshTodayDashboard) {
+        await global.VetLiveApi.refreshTodayDashboard();
+        cases = global.VetLiveApi?.getLastCases?.() || [];
+      }
+    }
+
+    // Fallback: If still no cases from live API, load daily pets
+    if (!cases.length) {
+      try {
+        const client = await ensureClient();
+        let pets = global.VetLiveApi?.getDailyPetsList?.(date);
+        if (!pets || !pets.length) {
+          const resp = await client.dailyPets(date).catch(() => null);
+          pets = (resp?.pets || []).map((p) => ({
+            ...p,
+            pet_id: p.pet_id || p.id,
+            id: p.pet_id || p.id,
+            name: p.pet_name || p.name,
+            pet_name: p.pet_name || p.name,
+          }));
+        }
+        if (Array.isArray(pets) && pets.length) {
+          cases = pets.map((p) => {
+            const petId = petIdOf(p);
+            const name = petNameOf(p);
+            const species = speciesOf(p);
+            const breed = breedOf(p);
+            const evalResult = global.VetStatusEngine?.evaluateProtocol
+              ? global.VetStatusEngine.evaluateProtocol({
+                  heartCount: 0,
+                  lungCount: 0,
+                  hasIr: false,
+                  hasRef: false,
+                  isScheduled: true,
+                  animalName: name,
+                  species,
+                })
+              : { statusLabel: "In Progress", statusClass: "in-progress" };
+            return {
+              id: petId,
+              name,
+              species,
+              breed,
+              displayId: petId.slice(0, 10),
+              time: "—",
+              statusLabel: evalResult.statusLabel,
+              statusClass: evalResult.statusClass,
+              statusInfo: evalResult,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn("Fallback dailyPets load failed", err);
+      }
+    }
+
+    if (!cases.length) {
+      root.innerHTML = `<p class="empty-state">No animals recorded on ${escapeHtml(date)}.</p>`;
+      return;
+    }
+
+    // Deduplicate cases by animal ID if multiple records exist for the same pet
+    const caseMapByPet = new Map();
+    cases.forEach((c) => {
+      const pKey = String(c.id || c.name || "").trim();
+      if (!pKey) return;
+      if (!caseMapByPet.has(pKey)) {
+        caseMapByPet.set(pKey, c);
+      } else {
+        const cur = caseMapByPet.get(pKey);
+        // Prioritize completed or newer timestamp
+        if (c.statusLabel === "Completed" && cur.statusLabel !== "Completed") {
+          caseMapByPet.set(pKey, c);
+        } else if ((c.timestamp || 0) > (cur.timestamp || 0)) {
+          caseMapByPet.set(pKey, c);
+        }
+      }
+    });
+    const uniqueCases = Array.from(caseMapByPet.values());
+
+    const totalAll = uniqueCases.length;
+    const totalSuccess = uniqueCases.filter((c) => c.statusLabel === "Completed").length;
+    const totalIncomplete = uniqueCases.filter((c) => c.statusLabel === "Incomplete" || c.statusLabel === "In Progress").length;
+
+    let filteredList = uniqueCases;
+    if (normalizedFilter === "successful") {
+      filteredList = uniqueCases.filter((c) => c.statusLabel === "Completed");
+    } else if (normalizedFilter === "incomplete") {
+      filteredList = uniqueCases.filter((c) => c.statusLabel === "Incomplete" || c.statusLabel === "In Progress");
+    }
+
+    // Sort: Alphabetical by animal name
+    filteredList.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+    const tabsHtml = `
+      <div class="vitals-tabs-strip" role="tablist">
+        <button type="button" class="vitals-tab-btn ${normalizedFilter === 'all' ? 'is-active' : ''}" data-filter="all" role="tab">
+          <span>All Animals</span>
+          <span class="vitals-tab-count">${totalAll}</span>
+        </button>
+        <button type="button" class="vitals-tab-btn vitals-tab-btn--success ${normalizedFilter === 'successful' ? 'is-active' : ''}" data-filter="successful" role="tab">
+          <span>Successful Cases</span>
+          <span class="vitals-tab-count">${totalSuccess}</span>
+        </button>
+        <button type="button" class="vitals-tab-btn vitals-tab-btn--incomplete ${normalizedFilter === 'incomplete' ? 'is-active' : ''}" data-filter="incomplete" role="tab">
+          <span>Incomplete Cases</span>
+          <span class="vitals-tab-count">${totalIncomplete}</span>
+        </button>
+      </div>`;
+
+    if (!filteredList.length) {
+      root.innerHTML = `
+        ${tabsHtml}
+        <div class="empty-state">
+          <p>No ${escapeHtml(normalizedFilter)} cases found for ${escapeHtml(date)}.</p>
+        </div>`;
+      return;
+    }
+
+    const cardsHtml = filteredList
+      .map((c) => {
+        const ch = c.statusInfo?.checklist || {};
+        const hPass = !!ch.heart?.pass;
+        const lPass = !!ch.lung?.pass;
+        const irPass = !!ch.ir?.pass;
+        const refPass = !!ch.ref?.pass;
+        const missing = Array.isArray(c.statusInfo?.missing) ? c.statusInfo.missing : [];
+        const isComplete = c.statusLabel === "Completed";
+        const isPending = c.statusLabel === "In Progress";
+        const speciesIcon = c.statusInfo?.speciesIcon || "🐾";
+        const speciesName = c.statusInfo?.speciesName || c.species || "Animal";
+        const breed = c.breed ? ` · ${c.breed}` : "";
+        const displayId = c.displayId && c.displayId !== "—" ? ` · ID: ${c.displayId}` : (c.id ? ` · ID: ${c.id.slice(0, 10)}…` : "");
+
+        let alertBanner = "";
+        if (isComplete) {
+          alertBanner = `
+            <div class="case-protocol-alert case-protocol-alert--complete">
+              <span class="case-alert-icon">✓</span>
+              <div class="case-alert-body">
+                <strong>Protocol Complete:</strong> All 4 clinical validation requirements satisfied (4 Heart audio files, 4 Lung audio files, IR sensor reading, and Reference thermometer).
+              </div>
+            </div>`;
+        } else if (isPending) {
+          alertBanner = `
+            <div class="case-protocol-alert case-protocol-alert--pending">
+              <span class="case-alert-icon">⏳</span>
+              <div class="case-alert-body">
+                <strong>Scheduled / In Progress:</strong> Animal scheduled for today's clinical trial rounds. Awaiting vital sensors and stethoscope auscultation.
+              </div>
+            </div>`;
+        } else {
+          const missingText = missing.length
+            ? missing.join("; ")
+            : "Measurements missing for full protocol";
+          alertBanner = `
+            <div class="case-protocol-alert case-protocol-alert--incomplete">
+              <span class="case-alert-icon">⚠️</span>
+              <div class="case-alert-body">
+                <strong>Missing for complete protocol:</strong> ${escapeHtml(missingText)}. All 4 files for heart, 4 files for lung, IR temp, and reference temp are required.
+              </div>
+            </div>`;
+        }
+
+        return `
+          <article class="case-detail-card" data-pet-id="${escapeHtml(c.id)}">
+            <div class="case-card-header">
+              <div class="case-card-identity">
+                <div class="case-card-avatar" aria-hidden="true">${speciesIcon}</div>
+                <div>
+                  <div class="case-card-title-row">
+                    <h4 class="case-card-name">${escapeHtml(c.name || "Unknown Animal")}</h4>
+                    <span class="case-card-time">${escapeHtml(c.time || "—")}</span>
+                  </div>
+                  <div class="case-card-meta">
+                    <span>${escapeHtml(speciesName)}${escapeHtml(breed)}${escapeHtml(displayId)}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="case-card-badge-wrap">
+                <span class="cv-status-badge ${c.statusClass || (isComplete ? 'completed' : 'incomplete')}">
+                  <span class="badge-status-dot"></span>
+                  ${escapeHtml(c.statusLabel || (isComplete ? 'Completed' : 'Incomplete'))}
+                </span>
+              </div>
+            </div>
+
+            <div class="case-checklist-grid">
+              <div class="case-check-item ${hPass ? 'pass' : 'fail'}">
+                <span class="case-check-icon">${hPass ? '✓' : '✗'}</span>
+                <div class="case-check-content">
+                  <span class="case-check-name">🫀 Heart Audio (4 files)</span>
+                  <span class="case-check-status">${ch.heart?.current || 0} / 4 recordings ${hPass ? '(Complete)' : '(Need 4)'}</span>
+                </div>
+              </div>
+
+              <div class="case-check-item ${lPass ? 'pass' : 'fail'}">
+                <span class="case-check-icon">${lPass ? '✓' : '✗'}</span>
+                <div class="case-check-content">
+                  <span class="case-check-name">🫁 Lung Audio (4 files)</span>
+                  <span class="case-check-status">${ch.lung?.current || 0} / 4 recordings ${lPass ? '(Complete)' : '(Need 4)'}</span>
+                </div>
+              </div>
+
+              <div class="case-check-item ${irPass ? 'pass' : 'fail'}">
+                <span class="case-check-icon">${irPass ? '✓' : '✗'}</span>
+                <div class="case-check-content">
+                  <span class="case-check-name">🌡️ Infrared (IR) Temp</span>
+                  <span class="case-check-status">${ch.ir?.val ? escapeHtml(ch.ir.val) : 'Missing'}</span>
+                </div>
+              </div>
+
+              <div class="case-check-item ${refPass ? 'pass' : 'fail'}">
+                <span class="case-check-icon">${refPass ? '✓' : '✗'}</span>
+                <div class="case-check-content">
+                  <span class="case-check-name">🩺 Reference Thermometer</span>
+                  <span class="case-check-status">${ch.ref?.val ? escapeHtml(ch.ref.val) : 'Missing'}</span>
+                </div>
+              </div>
+            </div>
+
+            ${alertBanner}
+
+            <div class="case-card-actions">
+              <button type="button" class="btn-case-history" data-pet-id="${escapeHtml(c.id)}">
+                <span>View Animal History & Recordings</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+          </article>`;
+      })
+      .join("");
+
+    root.innerHTML = `
+      ${tabsHtml}
+      <div class="case-cards-list">${cardsHtml}</div>`;
   }
 
   function statusFromTemp(temp, species = "dog") {
@@ -525,10 +733,17 @@
 
     if (name === "vitals-today") {
       showView("vitals-today");
-      setHeader("Animals Tested Today", "Animals tested on the selected date.", true);
+      const currentFilter = filter || "all";
+      if (currentFilter === "successful") {
+        setHeader("Successful Cases Today", "Animals meeting all 4 clinical validation protocol requirements.", true);
+      } else if (currentFilter === "incomplete") {
+        setHeader("Incomplete Cases Today", "Animals with incomplete validation protocols and missing measurements.", true);
+      } else {
+        setHeader("Animals Tested Today", "All animals evaluated during today's clinical validation study.", true);
+      }
       document.body.classList.remove("reports-mode");
       global.VetDashboardFilters?.showBar?.(false);
-      await renderVitalsTodayPage();
+      await renderVitalsTodayPage(currentFilter);
       return;
     }
 
@@ -565,11 +780,32 @@
 
   function bindUi() {
     document.getElementById("kpi-card-total-animals")?.addEventListener("click", () => {
-      navigate("/vitals-today");
+      navigate("/vitals-today/all");
     });
     document.getElementById("kpi-card-vitals-today")?.addEventListener("click", () => {
-      navigate("/vitals-today");
+      navigate("/vitals-today/all");
     });
+    document.getElementById("cv-box-tested")?.addEventListener("click", () => {
+      navigate("/vitals-today/all");
+    });
+    document.getElementById("cv-box-success")?.addEventListener("click", () => {
+      navigate("/vitals-today/successful");
+    });
+    document.getElementById("cv-box-failed")?.addEventListener("click", () => {
+      navigate("/vitals-today/incomplete");
+    });
+
+    ["cv-box-tested", "cv-box-success", "cv-box-failed"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          el.click();
+        }
+      });
+    });
+
     document.getElementById("page-back-btn")?.addEventListener("click", () => {
       if (window.history.length > 1) history.back();
       else navigate("/");
@@ -582,14 +818,27 @@
     });
 
     document.getElementById("vitals-today-root")?.addEventListener("click", (e) => {
+      const tab = e.target.closest("[data-filter]");
+      if (tab) {
+        const f = tab.getAttribute("data-filter") || "all";
+        navigate(`/vitals-today/${f}`);
+        return;
+      }
       const btn = e.target.closest("[data-pet-id]");
       if (!btn) return;
       navigate(`/animal/${encodeURIComponent(btn.getAttribute("data-pet-id"))}`);
     });
 
+    window.addEventListener("vet:cases-updated", () => {
+      const { name, filter } = parseHash();
+      if (name === "vitals-today") {
+        renderVitalsTodayPage(filter || "all");
+      }
+    });
+
     window.addEventListener("vet:dashboard-filters-changed", () => {
-      const { name } = parseHash();
-      if (name === "vitals-today") renderVitalsTodayPage();
+      const { name, filter } = parseHash();
+      if (name === "vitals-today") renderVitalsTodayPage(filter || "all");
     });
 
     window.addEventListener("hashchange", () => {
