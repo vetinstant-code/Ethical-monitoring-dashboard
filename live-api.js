@@ -380,6 +380,18 @@
       parseApiTimestamp(s?.started_at || s?.created_at)?.getTime() ||
       0;
 
+    // Evaluate temperature status for the Comparison table column (Normal, Mild, Critical)
+    const tempToEval = raw.mean ?? raw.max ?? metrics.mean;
+    const clinicalStatusInfo = global.VetStatusEngine?.evaluate
+      ? global.VetStatusEngine.evaluate(tempToEval, meta.species, "Temperature")
+      : {
+          statusLabel: "Normal",
+          statusClass: "normal",
+          condition: "Normal Range",
+          speciesName: meta.species,
+          measuredStr: tempToEval != null ? `${Number(tempToEval).toFixed(2)} °C` : "—",
+        };
+
     return {
       id: petId,
       name: meta.name,
@@ -391,6 +403,7 @@
       metrics,
       errMax: metrics.errMax,
       acceptancePass,
+      clinicalStatusInfo,
       incomplete: !canJudge,
       timestamp: ts,
     };
@@ -666,15 +679,28 @@
       if (!dateSessions.length && !comparisonIds.length) {
         local.speciesId = String(petId);
         local.statusCounts.inProgress += 1;
+        const protocolEval = global.VetStatusEngine?.evaluateProtocol
+          ? global.VetStatusEngine.evaluateProtocol({
+              heartCount: 0,
+              lungCount: 0,
+              hasIr: false,
+              hasRef: false,
+              isScheduled: true,
+              animalName: meta.name,
+              species: meta.species,
+            })
+          : { statusLabel: "In Progress", statusClass: "in-progress" };
+
         local.cases.push({
           time: "—",
           name: meta.name,
           displayId: meta.displayId || "—",
           id: petId,
           species: meta.species,
-          tests: "Temperature",
-          statusLabel: "In Progress",
-          statusClass: "low",
+          tests: "Pending",
+          statusLabel: protocolEval.statusLabel,
+          statusClass: protocolEval.statusClass,
+          statusInfo: protocolEval,
           timestamp: 0,
           sessionId: "",
         });
@@ -692,6 +718,34 @@
         if (row) local.comparisons.push(row);
       });
 
+      // Track stethoscope audio across sessions today for this pet
+      let totalHeart = 0;
+      let totalLung = 0;
+      const recBySid = {};
+
+      for (const s of dateSessions) {
+        const sid = s.id || s.exam_session_id;
+        const recResp = await client.recordings(petId, sid).catch(() => null);
+        if (gen != null && gen !== syncGeneration) return local;
+        if (recResp) {
+          recBySid[String(sid).trim()] = recResp;
+          normalizeRecordings(recResp).forEach((r) => {
+            const container = String(
+              r._audio_container ||
+              r.organ ||
+              r.recording_type ||
+              r.type ||
+              r.title ||
+              r.category ||
+              r.name ||
+              ""
+            ).toLowerCase();
+            if (container.includes("heart") || container.includes("cardiac")) totalHeart += 1;
+            if (container.includes("lung") || container.includes("pulmonary") || container.includes("respiratory")) totalLung += 1;
+          });
+        }
+      }
+
       let sessionIndex = 0;
       for (const s of dateSessions) {
           sessionIndex += 1;
@@ -700,8 +754,6 @@
           const hour = sessionHourIst(s);
 
           let tempVal = null;
-          let statusLabel = "Completed";
-          let statusClass = "stable";
           const tests = new Set();
 
           const irSummary = pickSessionSummary(summaries, sid, true);
@@ -710,9 +762,9 @@
 
           if (tempVal != null) tests.add("Temperature");
 
-          // Always check stethoscope recordings for this session so auscultation audio is never skipped
-          const recResp = await client.recordings(petId, sid).catch(() => null);
-          if (gen != null && gen !== syncGeneration) return local;
+          const recResp = recBySid[String(sid).trim()];
+          let sessionHeart = 0;
+          let sessionLung = 0;
           if (recResp) {
             normalizeRecordings(recResp).forEach((r) => {
               const container = String(
@@ -725,10 +777,19 @@
                 r.name ||
                 ""
               ).toLowerCase();
-              if (container.includes("heart") || container.includes("cardiac")) tests.add("Heart Sound");
-              if (container.includes("lung") || container.includes("pulmonary") || container.includes("respiratory")) tests.add("Lung Sound");
+              if (container.includes("heart") || container.includes("cardiac")) {
+                tests.add("Heart Sound");
+                sessionHeart += 1;
+              }
+              if (container.includes("lung") || container.includes("pulmonary") || container.includes("respiratory")) {
+                tests.add("Lung Sound");
+                sessionLung += 1;
+              }
             });
           }
+
+          if (totalHeart > 0) tests.add("Heart Sound");
+          if (totalLung > 0) tests.add("Lung Sound");
 
           if (!global.VetDashboardFilters?.matchesTestType?.(tests)) continue;
 
@@ -738,23 +799,45 @@
           if (tests.has("Heart Sound")) local.testCounts.heart += 1;
           if (tests.has("Lung Sound")) local.testCounts.lung += 1;
 
-          const tempEval = global.VetStatusEngine?.evaluate
-            ? global.VetStatusEngine.evaluate(tempVal, meta.species, tests)
+          // Find reference temperature & examD for protocol check
+          const matchingComp = local.comparisons.find(
+            (c) => String(c.sessionId).trim() === String(sid).trim() || String(c.id) === String(petId)
+          );
+          const irTemp = tempVal ?? matchingComp?.examD ?? (irSummary?.mean ?? irSummary?.max);
+          const refTemp = matchingComp?.reference ?? refFromSummary(rectSummary || irSummary);
+          const hasIr = irTemp != null && Number(irTemp) > 0;
+          const hasRef = refTemp != null && Number(refTemp) > 0;
+          const hCount = Math.max(sessionHeart, totalHeart);
+          const lCount = Math.max(sessionLung, totalLung);
+
+          // Evaluate Protocol Completion (4 heart, 4 lung, IR temp, Ref temp)
+          const protocolEval = global.VetStatusEngine?.evaluateProtocol
+            ? global.VetStatusEngine.evaluateProtocol({
+                heartCount: hCount,
+                lungCount: lCount,
+                hasIr,
+                hasRef,
+                irTemp,
+                refTemp,
+                isScheduled: false,
+                animalName: meta.name,
+                species: meta.species,
+              })
             : {
-                statusLabel: tempVal != null ? (tempVal > 39.2 || tempVal < 37.2 ? "Critical" : "Normal") : (tests.size > 0 ? "Normal" : "In Progress"),
-                statusClass: tempVal != null ? (tempVal > 39.2 || tempVal < 37.2 ? "critical" : "normal") : (tests.size > 0 ? "normal" : "in-progress"),
+                isProtocol: true,
+                statusLabel: hCount >= 4 && lCount >= 4 && hasIr && hasRef ? "Completed" : "Incomplete",
+                statusClass: hCount >= 4 && lCount >= 4 && hasIr && hasRef ? "completed" : "incomplete",
               };
 
-          statusLabel = tempEval.statusLabel;
-          statusClass = tempEval.statusClass;
+          const statusLabel = protocolEval.statusLabel;
+          const statusClass = protocolEval.statusClass;
 
-          if (statusClass === "critical") {
-            local.statusCounts.failed += 1;
-            local.riskFlaggedCount += 1;
-          } else if (statusClass === "normal" || statusClass === "mild") {
+          if (statusLabel === "Completed") {
             local.statusCounts.completed += 1;
-          } else {
+          } else if (statusLabel === "In Progress") {
             local.statusCounts.inProgress += 1;
+          } else {
+            local.statusCounts.failed += 1;
           }
 
           const ts =
@@ -773,7 +856,7 @@
               temp: tempVal != null ? `${tempVal.toFixed(1)}°C` : "No Reading",
               statusLabel,
               statusClass,
-              statusInfo: tempEval,
+              statusInfo: protocolEval,
               timestamp: ts,
             });
 
@@ -787,7 +870,7 @@
               temp: tempVal != null ? `${tempVal.toFixed(1)}°C` : "—",
               statusLabel,
               statusClass,
-              statusInfo: tempEval,
+              statusInfo: protocolEval,
               timestamp: ts,
               sessionId: String(sid || "").trim(),
             });
@@ -804,14 +887,32 @@
         );
         const existingCase = existingIdx >= 0 ? local.cases[existingIdx] : null;
         const testsDesc = existingCase?.tests || "Temperature";
-
-        const compEval = global.VetStatusEngine?.evaluate
-          ? global.VetStatusEngine.evaluate(mean, row.species, testsDesc)
-          : { statusLabel: "Normal", statusClass: "normal" };
-        const statusLabel = compEval.statusLabel;
-        const statusClass = compEval.statusClass;
         const d = row.timestamp ? new Date(row.timestamp) : null;
         const timeStr = d ? istTimeFormatter.format(d) : (existingCase?.time || "—");
+
+        // Maintain the protocol status for Recent Cases (Completed / Incomplete / In Progress)
+        let statusLabel = existingCase?.statusLabel;
+        let statusClass = existingCase?.statusClass;
+        let statusInfo = existingCase?.statusInfo;
+
+        if (!statusLabel || statusLabel === "Critical" || statusLabel === "Normal" || statusLabel === "Mild") {
+          const compProtocol = global.VetStatusEngine?.evaluateProtocol
+            ? global.VetStatusEngine.evaluateProtocol({
+                heartCount: totalHeart,
+                lungCount: totalLung,
+                hasIr: row.examD != null && Number(row.examD) > 0,
+                hasRef: row.reference != null && Number(row.reference) > 0,
+                irTemp: row.examD,
+                refTemp: row.reference,
+                isScheduled: false,
+                animalName: row.name,
+                species: row.species,
+              })
+            : { statusLabel: "Incomplete", statusClass: "incomplete" };
+          statusLabel = compProtocol.statusLabel;
+          statusClass = compProtocol.statusClass;
+          statusInfo = compProtocol;
+        }
 
         const compCase = {
           time: timeStr,
@@ -823,7 +924,7 @@
           temp: mean != null ? `${mean.toFixed(1)}°C` : (existingCase?.temp || "—"),
           statusLabel,
           statusClass,
-          statusInfo: compEval,
+          statusInfo,
           timestamp: row.timestamp || existingCase?.timestamp || 0,
           sessionId: String(row.sessionId || existingCase?.sessionId || "").trim(),
         };

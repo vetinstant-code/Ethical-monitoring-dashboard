@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0f2237" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta name="description" content="VetInstant Animal Health Intelligence report compilation center." />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="VetInstant — Animal Health Intelligence" />
@@ -16,7 +19,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=52" />
+  <link rel="stylesheet" href="styles.css?v=60" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -327,12 +330,44 @@
           </article>
         </section>
 
-        <!-- Row 3: distribution + recent cases (replaces status chart + CV summary) -->
-        <section class="cv-row-3 cv-row-3--split">
+        <!-- Row 3: distribution + status + validation summary -->
+        <section class="cv-row-3">
           <article class="cv-card">
             <h3 class="cv-card-title">Animal Distribution Today</h3>
             <div class="cv-chart-wrap cv-chart-wrap--sm"><canvas id="cv-distribution-chart"></canvas></div>
           </article>
+          <article class="cv-card">
+            <h3 class="cv-card-title">Validation Status Today</h3>
+            <div class="cv-chart-wrap cv-chart-wrap--sm"><canvas id="cv-status-chart"></canvas></div>
+          </article>
+          <article class="cv-card cv-summary-card">
+            <h3 class="cv-card-title">Clinical Validation Summary (Today)</h3>
+            <div class="cv-summary-grid">
+              <div class="cv-summary-box kpi-card-clickable" id="cv-box-tested">
+                <span>Animals Tested</span>
+                <strong id="cv-sum-tested">0</strong>
+              </div>
+              <div class="cv-summary-box">
+                <span>Successful Cases</span>
+                <strong id="cv-sum-success">0</strong>
+              </div>
+              <div class="cv-summary-box">
+                <span>Failed Cases</span>
+                <strong id="cv-sum-failed">0</strong>
+              </div>
+              <div class="cv-summary-box cv-summary-box--rate">
+                <span>Success Rate</span>
+                <strong id="cv-sum-rate">0%</strong>
+                <svg class="cv-rate-sparkline" viewBox="0 0 100 24" preserveAspectRatio="none" fill="none" aria-hidden="true">
+                  <path d="M0 18 Q 15 10, 30 14 T 60 8 T 85 12 T 100 6" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" fill="none" />
+                </svg>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <!-- Row 4: Recent Cases (Today) -->
+        <section class="cv-row-1">
           <article class="cv-card cv-card--wide">
             <h3 class="cv-card-title">Recent Cases (Today)</h3>
             <div class="rounds-table-scroller cv-table-scroll cv-table-scroll--cases">
@@ -344,7 +379,7 @@
           </article>
         </section>
 
-        <!-- Row 4: full-width reference comparison + validation stats table -->
+        <!-- Row 5: full-width reference comparison + validation stats table -->
         <section class="cv-row-1">
           <article class="cv-card cv-compare-card">
             <h3 class="cv-card-title">Reference vs ExamD Comparison (Temperature °C)</h3>
@@ -367,9 +402,10 @@
                     <th>Err Mean</th>
                     <th>Err Max</th>
                     <th>Acceptance Criteria (±0.2 °C)</th>
+                    <th>Clinical Status</th>
                   </tr>
                 </thead>
-                <tbody id="cv-compare-body"><tr><td colspan="15" class="empty-state">Loading…</td></tr></tbody>
+                <tbody id="cv-compare-body"><tr><td colspan="16" class="empty-state">Loading…</td></tr></tbody>
               </table>
             </div>
           </article>
@@ -728,24 +764,30 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="config.api.js?v=13"></script>
-  <script src="api-client.js?v=18"></script>
-  <script src="auth.js?v=15"></script>
-  <script src="api-adapter.js?v=9"></script>
-  <script src="app-filters.js?v=10"></script>
-  <script src="excel-generator.js?v=26"></script>
-  <script src="vitals-status-engine.js?v=2"></script>
-  <script src="dashboard-home.js?v=12"></script>
-  <script src="live-api.js?v=47"></script>
-  <script src="app-pages.js?v=16"></script>
-  <script src="reports-page.js?v=22"></script>
-  <script src="login-fx.js?v=8"></script>
+  <script src="config.api.js?v=60"></script>
+  <script src="api-client.js?v=60"></script>
+  <script src="auth.js?v=60"></script>
+  <script src="api-adapter.js?v=60"></script>
+  <script src="app-filters.js?v=60"></script>
+  <script src="excel-generator.js?v=60"></script>
+  <script src="vitals-status-engine.js?v=60"></script>
+  <script src="dashboard-home.js?v=60"></script>
+  <script src="live-api.js?v=60"></script>
+  <script src="app-pages.js?v=60"></script>
+  <script src="reports-page.js?v=60"></script>
+  <script src="login-fx.js?v=60"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./service-worker.js?v=59").catch((error) => {
-          console.error("Service worker registration failed:", error);
-        });
+        navigator.serviceWorker
+          .register("./service-worker.js?v=60")
+          .then((reg) => {
+            // Check for service worker updates immediately on page load
+            reg.update();
+          })
+          .catch((error) => {
+            console.error("Service worker registration failed:", error);
+          });
       });
     }
     // Setup dispatcher to start boot

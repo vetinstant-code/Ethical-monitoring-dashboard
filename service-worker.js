@@ -1,4 +1,4 @@
-const CACHE_NAME = "vetinstant-dashboard-v59";
+const CACHE_NAME = "vetinstant-dashboard-v60";
 
 const APP_SHELL_FILES = [
   "./",
@@ -51,7 +51,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first for HTML, JS, CSS so application updates immediately upon publish
+  // Network-first with no-store for HTML, JS, CSS so normal reloads ALWAYS fetch latest versions immediately!
   const isCode =
     event.request.mode === "navigate" ||
     url.pathname.endsWith(".html") ||
@@ -60,7 +60,7 @@ self.addEventListener("fetch", (event) => {
 
   if (isCode) {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: "no-store" })
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const clone = networkResponse.clone();

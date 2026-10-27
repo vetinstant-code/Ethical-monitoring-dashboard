@@ -213,7 +213,7 @@
     if (!body) return;
     const valid = (rows || []).filter((r) => r && r.metrics);
     if (!valid.length) {
-      body.innerHTML = `<tr><td colspan="15" class="empty-state">No reference comparison data for this date.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="16" class="empty-state">No reference comparison data for this date.</td></tr>`;
       return;
     }
 
@@ -226,6 +226,17 @@
           pass === true ? "cv-pass-ok" : pass === false ? "cv-pass-fail" : "";
         const errCls =
           pass === true ? "cv-pass-ok" : pass === false ? "cv-pass-fail" : "";
+
+        const clinicalBadge = global.VetStatusEngine?.renderBadgeHtml
+          ? global.VetStatusEngine.renderBadgeHtml(r.clinicalStatusInfo || {
+              statusLabel: "Normal",
+              statusClass: "normal",
+              condition: "Normal Range",
+              speciesName: r.species,
+              measuredStr: r.examD != null ? `${Number(r.examD).toFixed(2)} °C` : "—",
+            })
+          : `<span class="badge-status normal"><span class="badge-status-dot"></span><span>Normal</span></span>`;
+
         return `
         <tr class="activity-row-clickable" data-pet-id="${escapeHtml(r.id)}" tabindex="0" role="link">
           <td>${idx + 1}</td>
@@ -243,16 +254,19 @@
           <td>${fmtTemp(m.errMean)}</td>
           <td class="vitals-text-bold ${errCls}">${fmtTemp(r.errMax)}</td>
           <td class="vitals-text-bold ${passCls}">${passLabel}</td>
+          <td>${clinicalBadge}</td>
         </tr>`;
       })
       .join("");
 
     body.querySelectorAll("tr[data-pet-id]").forEach((row) => {
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".cv-status-badge")) return;
         global.VetAppPages?.openAnimalHistory?.(row.getAttribute("data-pet-id"));
       });
       row.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
+          if (e.target.closest(".cv-status-badge")) return;
           e.preventDefault();
           global.VetAppPages?.openAnimalHistory?.(row.getAttribute("data-pet-id"));
         }
@@ -331,6 +345,31 @@
     const distValues = Object.values(speciesCounts);
     const distColors = distLabels.map((l) => speciesStyle(l).color);
     renderDonut("cv-distribution-chart", distLabels, distValues, distColors);
+
+    renderDonut(
+      "cv-status-chart",
+      ["Completed", "In Progress", "Incomplete"],
+      [
+        statusCounts?.completed || 0,
+        statusCounts?.inProgress || 0,
+        statusCounts?.failed || 0,
+      ],
+      ["#22c55e", "#f59e0b", "#ef4444"]
+    );
+
+    const success = statusCounts?.completed || 0;
+    const failed = statusCounts?.failed || 0;
+    const tested = totalToday || 0;
+    const rate =
+      tested > 0 ? ((success / tested) * 100).toFixed(1) : "0.0";
+    const elTested = document.getElementById("cv-sum-tested");
+    const elSuccess = document.getElementById("cv-sum-success");
+    const elFailed = document.getElementById("cv-sum-failed");
+    const elRate = document.getElementById("cv-sum-rate");
+    if (elTested) elTested.textContent = String(tested);
+    if (elSuccess) elSuccess.textContent = String(success);
+    if (elFailed) elFailed.textContent = String(failed);
+    if (elRate) elRate.textContent = `${rate}%`;
 
     renderRecentCases(cases);
     renderCompareTable(comparisons);

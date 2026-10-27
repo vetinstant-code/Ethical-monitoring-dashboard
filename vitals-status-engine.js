@@ -289,6 +289,86 @@
   }
 
   // =========================================================================
+  // Clinical Trial Protocol Completion Evaluation (Recent Cases)
+  // Required: 4 Heart audio + 4 Lung audio + IR Temp + Reference Temp
+  // =========================================================================
+
+  function evaluateProtocol({
+    heartCount = 0,
+    lungCount = 0,
+    hasIr = false,
+    hasRef = false,
+    irTemp = null,
+    refTemp = null,
+    isScheduled = false,
+    animalName = "",
+    species = "",
+  } = {}) {
+    const cfg = getSpeciesConfig(species);
+    const hCount = Number(heartCount || 0);
+    const lCount = Number(lungCount || 0);
+    const heartPass = hCount >= 4;
+    const lungPass = lCount >= 4;
+    const irPass = Boolean(hasIr || (irTemp != null && Number(irTemp) > 0));
+    const refPass = Boolean(hasRef || (refTemp != null && Number(refTemp) > 0));
+
+    const isComplete = heartPass && lungPass && irPass && refPass;
+    const hasAnyData = hCount > 0 || lCount > 0 || irPass || refPass;
+
+    let statusLabel = "Completed";
+    let statusClass = "completed";
+    let condition = "Protocol Completed";
+    let severity = "All 4 Protocol Requirements Met";
+
+    const missing = [];
+    if (!heartPass) missing.push(`Heart Audio: ${hCount}/4 files recorded`);
+    if (!lungPass) missing.push(`Lung Audio: ${lCount}/4 files recorded`);
+    if (!irPass) missing.push("Infrared (IR) Temperature missing");
+    if (!refPass) missing.push("Reference Thermometer reading missing");
+
+    let clinicalSummary = "";
+
+    if (!hasAnyData && isScheduled) {
+      statusLabel = "In Progress";
+      statusClass = "in-progress";
+      condition = "Scheduled / In Progress";
+      severity = "Pending Checkup";
+      clinicalSummary = "Animal scheduled on daily roster. Awaiting vital sensors and stethoscope auscultation.";
+    } else if (isComplete) {
+      statusLabel = "Completed";
+      statusClass = "completed";
+      condition = "Full Protocol Completed";
+      severity = "Complete";
+      clinicalSummary = "All clinical validation trial protocol requirements fulfilled: 4 Heart audio files, 4 Lung audio files, IR sensor temperature, and Reference thermometer validation.";
+    } else {
+      statusLabel = "Incomplete";
+      statusClass = "incomplete";
+      condition = "Protocol Incomplete";
+      severity = `${4 - missing.length}/4 Requirements Met`;
+      clinicalSummary = `Missing for complete protocol: ${missing.join("; ")}. All 4 files for heart, 4 files for lung, IR temp, and reference temp are required.`;
+    }
+
+    return {
+      isProtocol: true,
+      statusLabel,
+      statusClass,
+      condition,
+      severity,
+      speciesKey: cfg.key,
+      speciesName: cfg.speciesName,
+      speciesIcon: cfg.icon,
+      checklist: {
+        heart: { label: "Heart Audio (4 files)", current: hCount, target: 4, pass: heartPass },
+        lung: { label: "Lung Audio (4 files)", current: lCount, target: 4, pass: lungPass },
+        ir: { label: "IR Temperature", val: irTemp != null ? `${Number(irTemp).toFixed(2)} °C` : null, pass: irPass },
+        ref: { label: "Reference Thermometer", val: refTemp != null ? `${Number(refTemp).toFixed(2)} °C` : null, pass: refPass },
+      },
+      missing,
+      clinicalSummary,
+    };
+  }
+
+  // =========================================================================
   // Popover UI Implementation
   // =========================================================================
 
@@ -388,52 +468,116 @@
     const conditionTitle = escapeHtml(evalData.condition || evalData.statusLabel);
     const speciesTitle = `${evalData.speciesIcon || "🐾"} ${escapeHtml(evalData.speciesName || "Animal")}`;
 
-    const r = evalData.ranges || {};
-    const activeType = evalData.activeRangeType;
+    if (evalData.isProtocol) {
+      // Protocol Checklist Popover (Recent Cases)
+      const ch = evalData.checklist || {};
+      const hPass = !!ch.heart?.pass;
+      const lPass = !!ch.lung?.pass;
+      const irPass = !!ch.ir?.pass;
+      const refPass = !!ch.ref?.pass;
 
-    pop.innerHTML = `
-      <div class="vsp-header">
-        <span class="vsp-badge-tag ${badgeCls}">
-          <span class="badge-status-dot"></span>
-          ${escapeHtml(evalData.statusLabel)}
-        </span>
-        <button type="button" class="vsp-close-btn" aria-label="Close" title="Close">✕</button>
-      </div>
-
-      <div class="vsp-species-row">
-        <span>${speciesTitle}</span>
-        <span style="color:#94a3b8">·</span>
-        <span style="font-size:11px;color:#64748b">${escapeHtml(evalData.severity || "")}</span>
-      </div>
-
-      <h4 class="vsp-title">${conditionTitle}</h4>
-
-      <div class="vsp-temp-display">
-        <span class="vsp-temp-label">Recorded Temp</span>
-        <span class="vsp-temp-val">${escapeHtml(evalData.measuredStr || "—")}</span>
-      </div>
-
-      <div class="vsp-ranges-grid">
-        <div class="vsp-range-row ${activeType === "normal" ? "highlight" : ""}">
-          <span class="vsp-range-label">Normal Range:</span>
-          <span class="vsp-range-val">${escapeHtml(r.normal || "—")}</span>
+      pop.innerHTML = `
+        <div class="vsp-header">
+          <span class="vsp-badge-tag ${badgeCls}">
+            <span class="badge-status-dot"></span>
+            ${escapeHtml(evalData.statusLabel)}
+          </span>
+          <button type="button" class="vsp-close-btn" aria-label="Close" title="Close">✕</button>
         </div>
-        <div class="vsp-range-row ${activeType === "mildFever" ? "highlight" : ""}">
-          <span class="vsp-range-label">Mild Fever:</span>
-          <span class="vsp-range-val">${escapeHtml(r.mildFever || "—")}</span>
-        </div>
-        <div class="vsp-range-row ${activeType === "hypothermia" ? "highlight" : ""}">
-          <span class="vsp-range-label">Hypothermia (Low):</span>
-          <span class="vsp-range-val">${escapeHtml(r.hypothermia || "—")}</span>
-        </div>
-        <div class="vsp-range-row ${activeType === "hyperthermia" ? "highlight" : ""}">
-          <span class="vsp-range-label">Hyperthermia (High):</span>
-          <span class="vsp-range-val">${escapeHtml(r.hyperthermia || "—")}</span>
-        </div>
-      </div>
 
-      <p class="vsp-desc">${escapeHtml(evalData.clinicalSummary || "")}</p>
-    `;
+        <div class="vsp-species-row">
+          <span>${speciesTitle}</span>
+          <span style="color:#94a3b8">·</span>
+          <span style="font-size:11px;color:#64748b">${escapeHtml(evalData.severity || "Trial Protocol")}</span>
+        </div>
+
+        <h4 class="vsp-title">${conditionTitle}</h4>
+
+        <div class="vsp-checklist">
+          <div class="vsp-check-item ${hPass ? "pass" : "fail"}">
+            <span class="vsp-check-icon">${hPass ? "✓" : "✗"}</span>
+            <div class="vsp-check-content">
+              <span class="vsp-check-name">🫀 Heart Audio (4 files)</span>
+              <span class="vsp-check-status">${ch.heart?.current || 0} / 4 recordings ${hPass ? "(Complete)" : "(Need 4)"}</span>
+            </div>
+          </div>
+
+          <div class="vsp-check-item ${lPass ? "pass" : "fail"}">
+            <span class="vsp-check-icon">${lPass ? "✓" : "✗"}</span>
+            <div class="vsp-check-content">
+              <span class="vsp-check-name">🫁 Lung Audio (4 files)</span>
+              <span class="vsp-check-status">${ch.lung?.current || 0} / 4 recordings ${lPass ? "(Complete)" : "(Need 4)"}</span>
+            </div>
+          </div>
+
+          <div class="vsp-check-item ${irPass ? "pass" : "fail"}">
+            <span class="vsp-check-icon">${irPass ? "✓" : "✗"}</span>
+            <div class="vsp-check-content">
+              <span class="vsp-check-name">🌡️ Infrared (IR) Temp</span>
+              <span class="vsp-check-status">${ch.ir?.val ? escapeHtml(ch.ir.val) : "Missing"}</span>
+            </div>
+          </div>
+
+          <div class="vsp-check-item ${refPass ? "pass" : "fail"}">
+            <span class="vsp-check-icon">${refPass ? "✓" : "✗"}</span>
+            <div class="vsp-check-content">
+              <span class="vsp-check-name">🩺 Reference Thermometer</span>
+              <span class="vsp-check-status">${ch.ref?.val ? escapeHtml(ch.ref.val) : "Missing"}</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="vsp-desc">${escapeHtml(evalData.clinicalSummary || "")}</p>
+      `;
+    } else {
+      // Temperature Clinical Evaluation Popover (Reference vs ExamD Comparison Table)
+      const r = evalData.ranges || {};
+      const activeType = evalData.activeRangeType;
+
+      pop.innerHTML = `
+        <div class="vsp-header">
+          <span class="vsp-badge-tag ${badgeCls}">
+            <span class="badge-status-dot"></span>
+            ${escapeHtml(evalData.statusLabel)}
+          </span>
+          <button type="button" class="vsp-close-btn" aria-label="Close" title="Close">✕</button>
+        </div>
+
+        <div class="vsp-species-row">
+          <span>${speciesTitle}</span>
+          <span style="color:#94a3b8">·</span>
+          <span style="font-size:11px;color:#64748b">${escapeHtml(evalData.severity || "")}</span>
+        </div>
+
+        <h4 class="vsp-title">${conditionTitle}</h4>
+
+        <div class="vsp-temp-display">
+          <span class="vsp-temp-label">Recorded Temp</span>
+          <span class="vsp-temp-val">${escapeHtml(evalData.measuredStr || "—")}</span>
+        </div>
+
+        <div class="vsp-ranges-grid">
+          <div class="vsp-range-row ${activeType === "normal" ? "highlight" : ""}">
+            <span class="vsp-range-label">Normal Range:</span>
+            <span class="vsp-range-val">${escapeHtml(r.normal || "—")}</span>
+          </div>
+          <div class="vsp-range-row ${activeType === "mildFever" ? "highlight" : ""}">
+            <span class="vsp-range-label">Mild Fever:</span>
+            <span class="vsp-range-val">${escapeHtml(r.mildFever || "—")}</span>
+          </div>
+          <div class="vsp-range-row ${activeType === "hypothermia" ? "highlight" : ""}">
+            <span class="vsp-range-label">Hypothermia (Low):</span>
+            <span class="vsp-range-val">${escapeHtml(r.hypothermia || "—")}</span>
+          </div>
+          <div class="vsp-range-row ${activeType === "hyperthermia" ? "highlight" : ""}">
+            <span class="vsp-range-label">Hyperthermia (High):</span>
+            <span class="vsp-range-val">${escapeHtml(r.hyperthermia || "—")}</span>
+          </div>
+        </div>
+
+        <p class="vsp-desc">${escapeHtml(evalData.clinicalSummary || "")}</p>
+      `;
+    }
 
     pop.querySelector(".vsp-close-btn")?.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -548,6 +692,8 @@
 
   global.VetStatusEngine = {
     evaluate: evaluateTemperature,
+    evaluateTemperature,
+    evaluateProtocol,
     renderBadgeHtml,
     getSpeciesConfig,
     showPopover,
