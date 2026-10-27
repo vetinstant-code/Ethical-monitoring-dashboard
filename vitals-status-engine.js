@@ -302,8 +302,81 @@
     popoverEl.className = "vitals-status-popover";
     popoverEl.setAttribute("role", "dialog");
     popoverEl.setAttribute("aria-live", "polite");
+
+    // Allow user to hover into popover smoothly without it closing
+    popoverEl.addEventListener("mouseenter", () => {
+      clearTimeout(hoverTimeout);
+    });
+    popoverEl.addEventListener("mouseleave", (e) => {
+      if (pinnedBadge) return;
+      if (e.relatedTarget && e.relatedTarget.closest?.(".cv-status-badge")) return;
+      hoverTimeout = setTimeout(() => hidePopover(false), 150);
+    });
+
     document.body.appendChild(popoverEl);
     return popoverEl;
+  }
+
+  function positionPopover(badge, pop) {
+    const rect = badge.getBoundingClientRect();
+    const popWidth = Math.min(320, window.innerWidth - 32);
+    pop.style.width = `${popWidth}px`;
+
+    // Force style compute to get real, rendered height
+    pop.style.left = "-9999px";
+    pop.style.top = "-9999px";
+    pop.style.display = "block";
+    const popHeight = pop.offsetHeight || 320;
+
+    const gap = 10;
+    const vpHeight = window.innerHeight;
+    const vpWidth = window.innerWidth;
+
+    const spaceBelow = vpHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    let top = 0;
+    let left = rect.left + rect.width / 2 - popWidth / 2;
+
+    if (spaceBelow >= popHeight + gap + 10) {
+      // Room below
+      top = rect.bottom + gap;
+    } else if (spaceAbove >= popHeight + gap + 10) {
+      // Cleanly above badge: top is rect.top - popHeight - gap, ending strictly gap px above badge
+      top = rect.top - popHeight - gap;
+    } else {
+      // If neither full top nor bottom fits comfortably, place to the side or prioritize larger space
+      if (rect.left >= popWidth + gap + 16) {
+        left = rect.left - popWidth - gap;
+        top = Math.max(12, Math.min(rect.top, vpHeight - popHeight - 12));
+      } else if (spaceAbove > spaceBelow) {
+        top = Math.max(12, rect.top - popHeight - gap);
+      } else {
+        top = Math.min(vpHeight - popHeight - 12, rect.bottom + gap);
+      }
+    }
+
+    // Clamp horizontally inside viewport
+    if (left < 16) left = 16;
+    if (left + popWidth > vpWidth - 16) {
+      left = vpWidth - popWidth - 16;
+    }
+
+    // Anti-collision safeguard: ensure popover NEVER overlaps badge bounding rect under mouse cursor
+    const vOverlap = (top < rect.bottom && (top + popHeight) > rect.top);
+    const hOverlap = (left < rect.right && (left + popWidth) > rect.left);
+    if (vOverlap && hOverlap) {
+      if (rect.left >= popWidth + gap + 16) {
+        left = rect.left - popWidth - gap;
+      } else if (spaceAbove >= spaceBelow) {
+        top = rect.top - popHeight - gap;
+      } else {
+        top = rect.bottom + gap;
+      }
+    }
+
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
   }
 
   function showPopover(badge, evalData, isClick = false) {
@@ -311,10 +384,6 @@
     clearTimeout(hoverTimeout);
 
     const pop = ensurePopoverEl();
-    const isCritical = evalData.statusClass === "critical";
-    const isMild = evalData.statusClass === "mild";
-    const isNormal = evalData.statusClass === "normal";
-
     const badgeCls = evalData.statusClass || "normal";
     const conditionTitle = escapeHtml(evalData.condition || evalData.statusLabel);
     const speciesTitle = `${evalData.speciesIcon || "🐾"} ${escapeHtml(evalData.speciesName || "Animal")}`;
@@ -371,23 +440,8 @@
       hidePopover(true);
     });
 
-    // Positioning
-    const rect = badge.getBoundingClientRect();
-    const popWidth = 320;
-    let left = rect.left + rect.width / 2 - popWidth / 2;
-    if (left < 16) left = 16;
-    if (left + popWidth > window.innerWidth - 16) {
-      left = window.innerWidth - popWidth - 16;
-    }
-
-    let top = rect.bottom + 8;
-    // If popover falls below viewport bottom, position above badge
-    if (top + 280 > window.innerHeight) {
-      top = Math.max(16, rect.top - 280);
-    }
-
-    pop.style.left = `${Math.round(left)}px`;
-    pop.style.top = `${Math.round(top)}px`;
+    // Position safely without collision
+    positionPopover(badge, pop);
     pop.classList.add("is-visible");
 
     if (isClick) {
@@ -433,6 +487,11 @@
       const badge = e.target.closest(".cv-status-badge");
       if (!badge) return;
       if (pinnedBadge) return; // Keep clicked popover open
+      // If moving between elements inside the same badge, do nothing
+      if (e.relatedTarget && badge.contains(e.relatedTarget)) {
+        return;
+      }
+      clearTimeout(hoverTimeout);
       const raw = badge.getAttribute("data-status-info");
       try {
         const evalData = raw ? JSON.parse(raw) : null;
@@ -446,7 +505,15 @@
       const badge = e.target.closest(".cv-status-badge");
       if (!badge) return;
       if (pinnedBadge) return;
-      hoverTimeout = setTimeout(() => hidePopover(false), 200);
+      // If moving between child elements of the same badge, do not hide
+      if (e.relatedTarget && badge.contains(e.relatedTarget)) {
+        return;
+      }
+      // If moving directly into the popover, keep it open
+      if (e.relatedTarget && popoverEl && popoverEl.contains(e.relatedTarget)) {
+        return;
+      }
+      hoverTimeout = setTimeout(() => hidePopover(false), 150);
     });
 
     document.addEventListener("keydown", (e) => {
