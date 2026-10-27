@@ -426,6 +426,11 @@
                 </div>
                 <p class="case-root-cause-desc">${escapeHtml(verdict.message || "")}</p>
                 ${verdict.evidence ? `<div class="case-root-cause-evidence"><span>${escapeHtml(verdict.evidence)}</span></div>` : ""}
+                <div class="case-root-cause-actions">
+                  <button type="button" class="btn-banner-excel" data-pet-id="${escapeHtml(c.id)}" title="Download complete forensic decoded Excel">
+                    <span>📊 Download Decoded Log (.xlsx)</span>
+                  </button>
+                </div>
               </div>`;
           } else {
             const currentPct = prog?.pct || 15;
@@ -507,6 +512,10 @@
             ${diagHtml}
 
             <div class="case-card-actions">
+              <button type="button" class="btn-case-excel" data-pet-id="${escapeHtml(c.id)}" title="Generate and download full multi-sheet decoded log Excel">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                <span>Download Decoded Log (.xlsx)</span>
+              </button>
               <button type="button" class="btn-case-history" data-pet-id="${escapeHtml(c.id)}">
                 <span>View Animal History & Recordings</span>
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -874,13 +883,44 @@
       navigate(`/animal/${encodeURIComponent(btn.getAttribute("data-pet-id"))}`);
     });
 
-    document.getElementById("vitals-today-root")?.addEventListener("click", (e) => {
+    document.getElementById("vitals-today-root")?.addEventListener("click", async (e) => {
       const tab = e.target.closest("[data-filter]");
       if (tab) {
         const f = tab.getAttribute("data-filter") || "all";
         navigate(`/vitals-today/${f}`);
         return;
       }
+
+      const excelBtn = e.target.closest(".btn-case-excel, .btn-banner-excel");
+      if (excelBtn) {
+        e.stopPropagation();
+        e.preventDefault();
+        const petId = excelBtn.getAttribute("data-pet-id");
+        const date = getSelectedDate();
+        const cases = global.VetLiveApi?.getLastCases?.() || [];
+        const caseItem = cases.find((c) => String(c.id) === String(petId)) || { id: petId, name: petId };
+
+        const originalHtml = excelBtn.innerHTML;
+        excelBtn.disabled = true;
+        excelBtn.innerHTML = `<span class="diag-spinner"></span> Generating Decoded Excel…`;
+        try {
+          await global.VetDiagInvestigator?.exportCaseDiagnosticExcel?.(caseItem, date);
+          excelBtn.innerHTML = `✓ Downloaded`;
+          setTimeout(() => {
+            excelBtn.innerHTML = originalHtml;
+            excelBtn.disabled = false;
+          }, 2500);
+        } catch (err) {
+          console.error("Export error:", err);
+          excelBtn.innerHTML = `⚠️ Export Failed`;
+          setTimeout(() => {
+            excelBtn.innerHTML = originalHtml;
+            excelBtn.disabled = false;
+          }, 3000);
+        }
+        return;
+      }
+
       const btn = e.target.closest("[data-pet-id]");
       if (!btn) return;
       navigate(`/animal/${encodeURIComponent(btn.getAttribute("data-pet-id"))}`);
@@ -927,6 +967,11 @@
           </div>
           <p class="case-root-cause-desc">${escapeHtml(verdict.message || "")}</p>
           ${verdict.evidence ? `<div class="case-root-cause-evidence"><span>${escapeHtml(verdict.evidence)}</span></div>` : ""}
+          <div class="case-root-cause-actions">
+            <button type="button" class="btn-banner-excel" data-pet-id="${escapeHtml(petId)}" title="Download complete forensic decoded Excel">
+              <span>📊 Download Decoded Log (.xlsx)</span>
+            </button>
+          </div>
         </div>`;
     });
 

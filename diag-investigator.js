@@ -365,6 +365,7 @@
         const verdict = evaluateRootCause(events, caseItem);
         verdict.eventCount = events.length;
         verdict.window = `${from} - ${to} UTC`;
+        verdict.events = events;
 
         emitProgress(petId, 100, "Forensic diagnosis complete");
         await new Promise((r) => setTimeout(r, 100));
@@ -447,10 +448,410 @@
 
   document.addEventListener("DOMContentLoaded", init);
 
+  // =========================================================================
+  // 5. Complete Decoded Log Excel Generator (Multi-Sheet Workbook)
+  // =========================================================================
+
+  async function generateDecodedWorkbook({ caseItem, events, verdict, date, deviceId }) {
+    if (!global.ExcelJS) {
+      throw new Error("ExcelJS library is not available. Please ensure exceljs.min.js is loaded.");
+    }
+    const wb = new global.ExcelJS.Workbook();
+    wb.creator = "VetInstant Clinical Intelligence Engine";
+    wb.created = new Date();
+
+    const petName = String(caseItem?.name || "Animal").trim();
+    const petId = String(caseItem?.id || "").trim();
+    const species = String(caseItem?.species || "Animal").trim();
+    const breed = String(caseItem?.breed || "—").trim();
+    const ch = caseItem?.statusInfo?.checklist || {};
+
+    const NAVY = "1F4E79";
+    const BLUE_ALT = "F0F4F8";
+    const GREEN_PASS = "D4EFDF";
+    const RED_FAIL = "FADBD8";
+    const YELLOW_WARN = "FCF3CF";
+    const BORDER_COLOR = "D1D5DB";
+
+    const thinBorder = {
+      top: { style: "thin", color: { argb: BORDER_COLOR } },
+      left: { style: "thin", color: { argb: BORDER_COLOR } },
+      bottom: { style: "thin", color: { argb: BORDER_COLOR } },
+      right: { style: "thin", color: { argb: BORDER_COLOR } }
+    };
+
+    // -------------------------------------------------------------
+    // SHEET 1: EXECUTIVE FORENSIC SUMMARY
+    // -------------------------------------------------------------
+    const wsSummary = wb.addWorksheet("Forensic Summary", {
+      views: [{ showGridLines: true }]
+    });
+
+    wsSummary.columns = [
+      { width: 26 },
+      { width: 34 },
+      { width: 22 },
+      { width: 30 }
+    ];
+
+    wsSummary.mergeCells("A1:D1");
+    const titleCell = wsSummary.getCell("A1");
+    titleCell.value = "VETINSTANT CLINICAL VALIDATION — FORENSIC TELEMETRY AUDIT";
+    titleCell.font = { name: "Arial", size: 13, bold: true, color: { argb: "FFFFFF" } };
+    titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+    wsSummary.getRow(1).height = 32;
+
+    wsSummary.mergeCells("A2:D2");
+    const subCell = wsSummary.getCell("A2");
+    subCell.value = `Automated Root Cause Diagnosis & Physical Causality Trace · Evaluation Date: ${date}`;
+    subCell.font = { name: "Arial", size: 9.5, italic: true, color: { argb: "FFFFFF" } };
+    subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "2C5D8A" } };
+    subCell.alignment = { horizontal: "center", vertical: "middle" };
+    wsSummary.getRow(2).height = 20;
+
+    wsSummary.addRow([]);
+
+    function addSectionHeader(ws, title) {
+      const r = ws.addRow([title]);
+      ws.mergeCells(r.number, 1, r.number, 4);
+      const c = ws.getCell(`A${r.number}`);
+      c.font = { name: "Arial", size: 10.5, bold: true, color: { argb: NAVY } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "E8EEF5" } };
+      c.border = thinBorder;
+      r.height = 22;
+    }
+
+    addSectionHeader(wsSummary, "1. ANIMAL & EVALUATION SESSION IDENTIFICATION");
+    [
+      ["Animal Name:", petName, "Species / Breed:", `${species} · ${breed}`],
+      ["Database ID:", petId, "Device ID:", deviceId || "ARCHIT"],
+      ["Evaluation Window:", verdict?.window || "Full Day Window", "Overall Status:", caseItem?.statusLabel || "Incomplete"],
+    ].forEach(row => {
+      const r = wsSummary.addRow(row);
+      r.getCell(1).font = { bold: true };
+      r.getCell(3).font = { bold: true };
+      [1, 2, 3, 4].forEach(col => r.getCell(col).border = thinBorder);
+    });
+
+    wsSummary.addRow([]);
+
+    addSectionHeader(wsSummary, "2. CLINICAL PROTOCOL REQUIREMENTS CHECKLIST");
+    const hPass = !!ch.heart?.pass;
+    const lPass = !!ch.lung?.pass;
+    const irPass = !!ch.ir?.pass;
+    const refPass = !!ch.ref?.pass;
+
+    [
+      ["🫀 Heart Audio (4 recordings):", `${ch.heart?.current || 0} / 4 recordings`, "Status:", hPass ? "PASS (Complete)" : "MISSING (Need 4)"],
+      ["🫁 Lung Audio (4 recordings):", `${ch.lung?.current || 0} / 4 recordings`, "Status:", lPass ? "PASS (Complete)" : "MISSING (Need 4)"],
+      ["🌡️ Infrared (IR) Surface Temp:", ch.ir?.val ? String(ch.ir.val) : "Missing", "Status:", irPass ? "PASS" : "MISSING"],
+      ["🩺 Reference Thermometer:", ch.ref?.val ? String(ch.ref.val) : "Missing", "Status:", refPass ? "PASS" : "MISSING"],
+    ].forEach((row, idx) => {
+      const r = wsSummary.addRow(row);
+      r.getCell(1).font = { bold: true };
+      r.getCell(3).font = { bold: true };
+      const isPass = (idx === 0 && hPass) || (idx === 1 && lPass) || (idx === 2 && irPass) || (idx === 3 && refPass);
+      const statCell = r.getCell(4);
+      statCell.font = { bold: true, color: { argb: isPass ? "1E8449" : "C0392B" } };
+      statCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isPass ? GREEN_PASS : RED_FAIL } };
+      [1, 2, 3, 4].forEach(col => r.getCell(col).border = thinBorder);
+    });
+
+    wsSummary.addRow([]);
+
+    addSectionHeader(wsSummary, "3. ROOT CAUSE FORENSIC DIAGNOSTIC VERDICT");
+    [
+      ["Diagnosis Classification:", verdict?.tag || "Diagnosis", "Diagnostic Icon:", verdict?.icon || "ℹ️"],
+      ["Verdict Title:", verdict?.title || "Root Cause", "Subsystem Stage:", verdict?.stage || "OPERATOR"],
+      ["Root Cause Explanation:", verdict?.message || "Measurements incomplete.", "", ""],
+      ["Physical Evidence:", verdict?.evidence || "Diagnostic scan complete.", "", ""],
+      ["Events Analyzed:", `${events.length} diagnostic frames`, "Analysis Engine:", "VetInstant Browser Forensics"],
+    ].forEach((row, idx) => {
+      const r = wsSummary.addRow(row);
+      r.getCell(1).font = { bold: true };
+      if (idx === 2 || idx === 3) {
+        wsSummary.mergeCells(r.number, 2, r.number, 4);
+        r.getCell(2).alignment = { wrapText: true };
+      } else {
+        r.getCell(3).font = { bold: true };
+      }
+      [1, 2, 3, 4].forEach(col => r.getCell(col).border = thinBorder);
+      if (idx === 2 || idx === 3) r.height = 36;
+    });
+
+    // -------------------------------------------------------------
+    // SHEET 2: FAULTS & CAUSALITY EVIDENCE
+    // -------------------------------------------------------------
+    const wsFaults = wb.addWorksheet("Faults & Causality", {
+      views: [{ state: "frozen", ySplit: 1, showGridLines: true }]
+    });
+
+    wsFaults.columns = [
+      { header: "Seq #", width: 8 },
+      { header: "Timestamp (IST)", width: 22 },
+      { header: "Timestamp (UTC)", width: 22 },
+      { header: "Subsystem", width: 14 },
+      { header: "Event Code", width: 13 },
+      { header: "Severity", width: 12 },
+      { header: "Metric / Event Name", width: 28 },
+      { header: "Decoded Parameter", width: 25 },
+      { header: "Decoded Meaning & Causality Impact", width: 55 },
+      { header: "Raw Payload / Hex", width: 24 },
+    ];
+
+    const hRowFaults = wsFaults.getRow(1);
+    hRowFaults.height = 26;
+    hRowFaults.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    hRowFaults.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "C0392B" } };
+    hRowFaults.alignment = { vertical: "middle", horizontal: "center" };
+
+    const decodeHelper = global.VetDiagCodebooks?.decodeEvent || ((ev) => ({ code: ev.code || "EV", meaning: "Event", status: "INFO", owner: "DEV", metricName: "Telemetry", decodedVal: "" }));
+
+    let faultIndex = 1;
+    events.forEach(ev => {
+      const dec = decodeHelper(ev);
+      const isFault = dec.status === "ERROR" || dec.status === "WARN" || dec.code.startsWith("WF-") || dec.code.startsWith("MQ-") || dec.code.startsWith("UA-") || dec.code === "PM-51" || dec.code === "PM-54";
+      if (!isFault) return;
+
+      const tUtc = ev.timestamp || ev.recorded_at || ev.time || "—";
+      let tIst = tUtc;
+      try {
+        const dObj = new Date(tUtc);
+        if (!isNaN(dObj.getTime())) {
+          tIst = new Date(dObj.getTime() + 5.5 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 19);
+        }
+      } catch {}
+
+      const r = wsFaults.addRow([
+        faultIndex++,
+        tIst,
+        tUtc,
+        dec.owner,
+        dec.code,
+        dec.status,
+        dec.metricName,
+        dec.decodedVal,
+        dec.meaning,
+        `Session=0x${Number(ev.source_session || 0).toString(16)} Seq=0x${Number(ev.source_sequence || 0).toString(16)}`
+      ]);
+
+      const sevCell = r.getCell(6);
+      sevCell.alignment = { horizontal: "center" };
+      if (dec.status === "ERROR" || dec.status === "CRITICAL") {
+        sevCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: RED_FAIL } };
+        sevCell.font = { bold: true, color: { argb: "922B21" } };
+      } else {
+        sevCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: YELLOW_WARN } };
+        sevCell.font = { bold: true, color: { argb: "7D6608" } };
+      }
+
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(col => r.getCell(col).border = thinBorder);
+    });
+
+    if (faultIndex === 1) {
+      const emptyR = wsFaults.addRow([1, "—", "—", "SYSTEM", "CLEAN", "INFO", "No Faults Detected", "Clean Trace", "No hardware faults, Wi-Fi disconnects, or MQTT drops observed in this window.", "—"]);
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(col => emptyR.getCell(col).border = thinBorder);
+    }
+
+    // -------------------------------------------------------------
+    // SHEET 3: COMPLETE DECODED TELEMETRY (TIMELINE)
+    // -------------------------------------------------------------
+    const wsTimeline = wb.addWorksheet("Decoded Telemetry", {
+      views: [{ state: "frozen", ySplit: 1, showGridLines: true }]
+    });
+
+    wsTimeline.columns = [
+      { header: "Seq #", width: 8 },
+      { header: "Time (IST)", width: 22 },
+      { header: "Time (UTC)", width: 22 },
+      { header: "Subsystem", width: 14 },
+      { header: "Category", width: 20 },
+      { header: "Code", width: 12 },
+      { header: "Status", width: 10 },
+      { header: "Metric / Event Name", width: 26 },
+      { header: "Decoded Value", width: 24 },
+      { header: "Decoded Clinical & Engineering Meaning", width: 55 },
+      { header: "Raw Session / Seq Hex", width: 24 },
+    ];
+
+    const hRowTime = wsTimeline.getRow(1);
+    hRowTime.height = 26;
+    hRowTime.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    hRowTime.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
+    hRowTime.alignment = { vertical: "middle", horizontal: "center" };
+
+    events.forEach((ev, idx) => {
+      const dec = decodeHelper(ev);
+      const tUtc = ev.timestamp || ev.recorded_at || ev.time || "—";
+      let tIst = tUtc;
+      try {
+        const dObj = new Date(tUtc);
+        if (!isNaN(dObj.getTime())) {
+          tIst = new Date(dObj.getTime() + 5.5 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 19);
+        }
+      } catch {}
+
+      const r = wsTimeline.addRow([
+        idx + 1,
+        tIst,
+        tUtc,
+        dec.owner,
+        dec.category,
+        dec.code,
+        dec.status,
+        dec.metricName,
+        dec.decodedVal,
+        dec.meaning,
+        `Session=0x${Number(ev.source_session || 0).toString(16)} Seq=0x${Number(ev.source_sequence || 0).toString(16)}`
+      ]);
+
+      if (idx % 2 === 1) {
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].forEach(col => {
+          r.getCell(col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLUE_ALT } };
+        });
+      }
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].forEach(col => r.getCell(col).border = thinBorder);
+    });
+
+    // -------------------------------------------------------------
+    // SHEET 4: RF & CONNECTION LINK FLOW
+    // -------------------------------------------------------------
+    const wsRf = wb.addWorksheet("RF & Link Performance", {
+      views: [{ state: "frozen", ySplit: 1, showGridLines: true }]
+    });
+
+    wsRf.columns = [
+      { header: "Seq #", width: 8 },
+      { header: "Time (IST)", width: 22 },
+      { header: "Metric Group", width: 16 },
+      { header: "Metric Name", width: 26 },
+      { header: "Measured Value", width: 20 },
+      { header: "Diagnostic Meaning", width: 45 },
+    ];
+
+    const hRowRf = wsRf.getRow(1);
+    hRowRf.height = 26;
+    hRowRf.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    hRowRf.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "0D7377" } };
+    hRowRf.alignment = { vertical: "middle", horizontal: "center" };
+
+    let rfIndex = 1;
+    events.forEach(ev => {
+      const dec = decodeHelper(ev);
+      const isRfMetric = dec.code.startsWith("PM-") || dec.code.startsWith("WF-") || dec.code.startsWith("MQ-");
+      if (!isRfMetric) return;
+
+      const tUtc = ev.timestamp || ev.recorded_at || ev.time || "—";
+      let tIst = tUtc;
+      try {
+        const dObj = new Date(tUtc);
+        if (!isNaN(dObj.getTime())) {
+          tIst = new Date(dObj.getTime() + 5.5 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 19);
+        }
+      } catch {}
+
+      const r = wsRf.addRow([
+        rfIndex++,
+        tIst,
+        dec.category,
+        dec.metricName,
+        dec.decodedVal,
+        dec.meaning
+      ]);
+
+      if (rfIndex % 2 === 0) {
+        [1, 2, 3, 4, 5, 6].forEach(col => {
+          r.getCell(col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLUE_ALT } };
+        });
+      }
+      [1, 2, 3, 4, 5, 6].forEach(col => r.getCell(col).border = thinBorder);
+    });
+
+    return wb;
+  }
+
+  async function exportCaseDiagnosticExcel(caseItem, date, deviceId) {
+    const targetDate = date || global.VetDashboardFilters?.getDate?.() || new Date().toISOString().slice(0, 10);
+    const activeDevice = deviceId || global.API_CONFIG?.deviceId || "ARCHIT";
+    const petId = String(caseItem?.id || caseItem?.name || "").trim();
+    const sessionId = String(caseItem?.sessionId || "").trim();
+    const cacheKey = makeCacheKey(targetDate, activeDevice, petId, sessionId);
+
+    let verdict = memoryCache.get(cacheKey);
+    let events = verdict?.events;
+
+    if (!events || !events.length) {
+      const { from, to } = calculateWindow(caseItem, targetDate);
+      const client = global.VetLiveApi?.ensureClient ? await global.VetLiveApi.ensureClient() : null;
+      if (client && client.diagEvents) {
+        try {
+          const resp = await client.diagEvents({
+            deviceId: activeDevice,
+            date: targetDate,
+            from,
+            to,
+            limit: 1200,
+          });
+          events = Array.isArray(resp) ? resp : resp?.events || [];
+        } catch (e) {
+          console.warn("[DiagInvestigator] Events fetch failed:", e);
+        }
+      }
+    }
+
+    if (!events) events = [];
+    if (!verdict) {
+      verdict = evaluateRootCause(events, caseItem);
+    }
+
+    const wb = await generateDecodedWorkbook({
+      caseItem,
+      events,
+      verdict,
+      date: targetDate,
+      deviceId: activeDevice,
+    });
+
+    const outputBuffer = await wb.xlsx.writeBuffer();
+    const safePetName = String(caseItem?.name || "Animal").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const cleanDate = targetDate.replace(/-/g, "");
+    const filename = `diag_decoded_${safePetName}_${cleanDate}.xlsx`;
+
+    const outputBlob = new Blob([outputBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(outputBlob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Optional local server save
+    try {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = (reader.result || "").split(",")[1];
+        if (base64) {
+          fetch("http://localhost:8765/api/diag/save_excel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename, base64_data: base64 }),
+          }).catch(() => {});
+        }
+      };
+      reader.readAsDataURL(outputBlob);
+    } catch {}
+
+    return { filename, byteLength: outputBuffer.byteLength };
+  }
+
   global.VetDiagInvestigator = {
     enqueueCases,
     getVerdict,
     getProgress,
     makeCacheKey,
+    exportCaseDiagnosticExcel,
   };
 })(window);

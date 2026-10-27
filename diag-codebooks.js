@@ -124,6 +124,95 @@
     return val >= 0x80000000 ? val - 0x100000000 : val;
   }
 
+  function decodeEvent(ev) {
+    const fam = Number(ev.family_id || 0);
+    const cod = Number(ev.code_id || 0);
+    const code = normalizeCode(ev.code, fam, cod);
+    const fObj = FAMILIES[fam] || { prefix: "GEN", owner: "ESP", name: "General Telemetry" };
+    const owner = fObj.owner || (fam <= 15 ? "STM" : "ESP");
+    const u32 = unpackU32(ev.source_session, ev.source_sequence);
+
+    let metricName = fObj.name;
+    let decodedVal = `Session=0x${Number(ev.source_session || 0).toString(16)}, Seq=0x${Number(ev.source_sequence || 0).toString(16)}`;
+    let status = "INFO";
+    let meaning = `Diagnostic event ${code}`;
+    let category = fObj.name;
+
+    if (code.startsWith("PM-") || fam === 24) {
+      const pm = PM_METRICS[cod];
+      if (pm) {
+        category = `ESP ${pm.group}`;
+        metricName = pm.name;
+        if (pm.unit === "bytes") {
+          decodedVal = `${u32.toLocaleString()} bytes (${(u32 / 1024).toFixed(1)} KB)`;
+        } else if (pm.unit === "dBm") {
+          const s = unpackSigned(u32);
+          decodedVal = `${s} dBm`;
+          meaning = `Wi-Fi RF Signal Strength = ${s} dBm`;
+        } else if (pm.unit === "0/1") {
+          decodedVal = u32 === 1 ? "YES" : "NO";
+          meaning = `${pm.name}: ${decodedVal}`;
+        } else if (pm.unit === "%") {
+          decodedVal = `${u32}%`;
+          meaning = `${pm.name}: ${u32}%`;
+        } else if (pm.unit === "ms") {
+          decodedVal = `${u32} ms`;
+          meaning = `${pm.name}: ${u32} ms`;
+        } else if (pm.unit === "code" && cod === 51) {
+          const rTxt = WIFI_DISCONNECT_REASONS[u32] || `CODE_${u32}`;
+          decodedVal = `${rTxt} (${u32})`;
+          status = "WARN";
+          meaning = `⚠️ Wi-Fi Disconnect Event: ${rTxt}`;
+        } else if (pm.unit === "code" && cod === 55) {
+          const pName = POINT_NAMES[u32] || `Point_${u32}`;
+          decodedVal = `${pName} (${u32})`;
+          meaning = `Auscultation point selected: ${pName}`;
+        } else {
+          decodedVal = `${u32} ${pm.unit}`;
+          meaning = `${pm.name} = ${decodedVal}`;
+        }
+      }
+    } else if (code.startsWith("WF-") || code.startsWith("MQ-") || code.startsWith("UA-") || code.startsWith("TM-") || code.startsWith("IB-")) {
+      status = "ERROR";
+      meaning = `⚠️ Failure / Fault detected in ${fObj.name} [${code}]`;
+    } else if (code === "SC-21") {
+      meaning = "🌡️ STM32 initiated & sent Temperature packet over UART to ESP32";
+      category = "Temperature Flow";
+    } else if (code === "SC-20") {
+      meaning = "ESP32 ACKed Temperature packet from STM32";
+      category = "Temperature Flow";
+    } else if (code === "ES-12") {
+      meaning = "ESP32 validated temperature payload checksum & structure";
+      category = "Temperature Flow";
+    } else if (code === "ES-13") {
+      meaning = "ESP32 queued temperature reading in MQTT outbox";
+      category = "Temperature Flow";
+    } else if (code === "ES-14") {
+      meaning = "✓ AWS IoT Core MQTT broker returned QoS1 PUBACK (Cloud Accepted)";
+      category = "Cloud Upload";
+      status = "SUCCESS";
+    } else if (code === "SF-10") {
+      meaning = "🫀 STM32 initiated Audio Streaming START command";
+      category = "Audio Flow";
+    } else if (code === "SF-11") {
+      meaning = "⏹️ STM32 executed Audio Streaming STOP command";
+      category = "Audio Flow";
+    }
+
+    return {
+      code,
+      family: fObj.prefix,
+      familyName: fObj.name,
+      owner,
+      metricName,
+      decodedVal,
+      status,
+      meaning,
+      category,
+      u32,
+    };
+  }
+
   global.VetDiagCodebooks = {
     FAMILIES,
     PM_METRICS,
@@ -132,5 +221,6 @@
     normalizeCode,
     unpackU32,
     unpackSigned,
+    decodeEvent,
   };
 })(window);
