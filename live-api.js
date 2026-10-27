@@ -797,7 +797,9 @@
         const d = row.timestamp ? new Date(row.timestamp) : null;
         const timeStr = d ? istTimeFormatter.format(d) : "—";
         const existingIdx = local.cases.findIndex(
-          (c) => c.sessionId && c.sessionId === String(row.sessionId).trim()
+          (c) =>
+            (c.sessionId && c.sessionId === String(row.sessionId).trim()) ||
+            String(c.id) === String(row.id)
         );
         const compCase = {
           time: timeStr,
@@ -1186,11 +1188,14 @@
         return (b.timestamp || 0) - (a.timestamp || 0);
       });
 
-      // Recent Cases: Merge comparison rows with session cases and daily scheduled animals
+      // Recent Cases: Deduplicate strictly by Pet ID so each tested animal appears exactly once
       const caseMap = new Map();
+
+      // 1. First add richest comparison / clinical data
       dashboardComparisons.forEach((row) => {
+        const petId = String(row.id);
         const mean = row.incomplete ? null : row.metrics?.mean;
-        const cCase = cases.find((c) => String(c.id) === String(row.id));
+        const cCase = cases.find((c) => String(c.id) === petId);
         const testsDesc = cCase?.tests || (row.incomplete ? "Heart Sound" : "Temperature");
         const tempEval = cCase?.statusInfo || (global.VetStatusEngine?.evaluate
           ? global.VetStatusEngine.evaluate(mean, row.species, testsDesc)
@@ -1199,7 +1204,7 @@
         const finalClass = tempEval.statusClass || "normal";
         const d = row.timestamp ? new Date(row.timestamp) : null;
         const timeStr = d ? istTimeFormatter.format(d) : (cCase?.time || "—");
-        caseMap.set(String(row.id), {
+        caseMap.set(petId, {
           time: timeStr,
           name: row.name,
           displayId: row.displayId || "—",
@@ -1215,22 +1220,37 @@
         });
       });
 
+      // 2. Add cases for any pets not in dashboardComparisons, or update if case has newer readings/retake
       cases.forEach((c) => {
-        const key = String(c.sessionId || c.id);
-        if (!caseMap.has(key)) {
-          caseMap.set(key, c);
+        const petId = String(c.id);
+        if (!caseMap.has(petId)) {
+          caseMap.set(petId, c);
+        } else {
+          const existing = caseMap.get(petId);
+          // Update existing with newer timestamp or richer tests/readings
+          if ((c.timestamp || 0) > (existing.timestamp || 0)) {
+            existing.time = c.time || existing.time;
+            existing.timestamp = c.timestamp;
+            if (c.tests && c.tests !== "Pending") existing.tests = c.tests;
+            if (c.temp && c.temp !== "—") existing.temp = c.temp;
+            if (c.statusInfo) existing.statusInfo = c.statusInfo;
+            if (c.statusLabel) existing.statusLabel = c.statusLabel;
+            if (c.statusClass) existing.statusClass = c.statusClass;
+          } else if (c.tests && existing.tests === "Temperature" && c.tests !== "Temperature") {
+            existing.tests = c.tests;
+          }
         }
       });
 
+      // 3. Add scheduled daily pets awaiting measurements
       dailyPetsList.forEach((p) => {
         const petId = String(p.pet_id || p.id);
-        const hasPet = Array.from(caseMap.values()).some((c) => String(c.id) === petId);
-        if (!hasPet) {
+        if (!caseMap.has(petId)) {
           const meta = petMetaOf(petId, p, p);
           const tempEval = global.VetStatusEngine?.evaluate
             ? global.VetStatusEngine.evaluate(null, meta.species, null)
             : { statusLabel: "In Progress", statusClass: "in-progress" };
-          caseMap.set(`daily-${petId}`, {
+          caseMap.set(petId, {
             time: "—",
             name: meta.name,
             displayId: meta.displayId || "—",
