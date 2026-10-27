@@ -263,11 +263,13 @@
     }
   }
 
-  function statusFromTemp(temp) {
-    if (temp == null) return { label: "—", cls: "stable" };
-    if (temp > 38.6) return { label: "Critical", cls: "critical" };
-    if (temp < 37.2) return { label: "Low", cls: "low" };
-    return { label: "Stable", cls: "stable" };
+  function statusFromTemp(temp, species = "dog") {
+    if (global.VetStatusEngine?.evaluate) {
+      return global.VetStatusEngine.evaluate(temp, species);
+    }
+    if (temp == null) return { statusLabel: "—", statusClass: "normal", label: "—", cls: "normal" };
+    if (temp > 39.2 || temp < 37.2) return { statusLabel: "Critical", statusClass: "critical", label: "Critical", cls: "critical" };
+    return { statusLabel: "Normal", statusClass: "normal", label: "Normal", cls: "normal" };
   }
 
   function sensorKeyOfSummary(row) {
@@ -395,7 +397,7 @@
         const irBody = normNum(ir?.t1) || normNum(ir?.t2) || normNum(ir?.t3) || null;
         const rectT = normNum(rect?.t1) || normNum(rect?.t2) || normNum(rect?.t3) || null;
         const displayTemp = rectT != null ? rectT : irBody;
-        const st = statusFromTemp(displayTemp);
+        const st = statusFromTemp(displayTemp, species);
 
         const refs = best ? summaryTriple(best, "ref") : [0, 0, 0];
         const refMax = Math.max(...refs);
@@ -405,8 +407,9 @@
           whenSort: recorded?.getTime?.() || started?.getTime?.() || 0,
           whenLabel,
           recordedLabel: recorded ? istDateTimeFormatter.format(recorded) : "—",
-          statusLabel: st.label,
-          statusClass: st.cls,
+          statusLabel: st.statusLabel || st.label,
+          statusClass: st.statusClass || st.cls,
+          statusInfo: st,
           ir,
           rect,
           displayTemp,
@@ -427,7 +430,7 @@
         const irBody = normNum(ir?.t1) || normNum(ir?.t2) || normNum(ir?.t3) || null;
         const rectT = normNum(rect?.t1) || normNum(rect?.t2) || normNum(rect?.t3) || null;
         const displayTemp = rectT != null ? rectT : irBody;
-        const st = statusFromTemp(displayTemp);
+        const st = statusFromTemp(displayTemp, species);
         const refs = best ? summaryTriple(best, "ref") : [0, 0, 0];
         const refMax = Math.max(...refs);
         cards.push({
@@ -435,8 +438,9 @@
           whenSort: recorded?.getTime?.() || 0,
           whenLabel: "—",
           recordedLabel: recorded ? istDateTimeFormatter.format(recorded) : "—",
-          statusLabel: st.label,
-          statusClass: st.cls,
+          statusLabel: st.statusLabel || st.label,
+          statusClass: st.statusClass || st.cls,
+          statusInfo: st,
           ir,
           rect,
           displayTemp,
@@ -475,6 +479,15 @@
                   const best = row.ir || row.rect || {};
                   const stats = [fmtMaybe(best.mean), fmtMaybe(best.max), fmtMaybe(best.sd)].join(" / ");
                   const note = String(best.notes || "").trim() || "—";
+                  const badgeHtml = global.VetStatusEngine?.renderBadgeHtml
+                    ? global.VetStatusEngine.renderBadgeHtml(row.statusInfo || {
+                        statusLabel: row.statusLabel,
+                        statusClass: row.statusClass,
+                        condition: row.statusLabel,
+                        speciesName: species,
+                        measuredStr: row.displayTemp != null ? `${row.displayTemp.toFixed(2)} °C` : "—",
+                      })
+                    : `<span class="badge-status ${row.statusClass}">${escapeHtml(row.statusLabel)}</span>`;
                   return `
                 <tr>
                   <td class="time-col-text">${escapeHtml(row.whenLabel)}</td>
@@ -485,7 +498,7 @@
                   <td>${escapeHtml(stats)}</td>
                   <td class="animal-id-sub">${escapeHtml(note)}</td>
                   <td class="animal-id-sub">${escapeHtml(String(row.sid).slice(0, 12))}</td>
-                  <td><span class="badge-status ${row.statusClass}">${escapeHtml(row.statusLabel)}</span></td>
+                  <td>${badgeHtml}</td>
                 </tr>`;
                 })
                 .join("")}

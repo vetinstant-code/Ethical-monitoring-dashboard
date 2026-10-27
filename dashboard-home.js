@@ -155,25 +155,37 @@
       return;
     }
     body.innerHTML = cases
-      .map(
-        (c) => `
+      .map((c) => {
+        const badgeHtml = global.VetStatusEngine?.renderBadgeHtml
+          ? global.VetStatusEngine.renderBadgeHtml(c.statusInfo || {
+              statusLabel: c.statusLabel,
+              statusClass: c.statusClass,
+              condition: c.statusLabel,
+              speciesName: c.species,
+              measuredStr: c.temp || "—",
+            })
+          : `<span class="badge-status ${c.statusClass}"><span class="badge-status-dot"></span><span>${escapeHtml(c.statusLabel)}</span></span>`;
+
+        return `
       <tr class="activity-row-clickable" data-pet-id="${escapeHtml(c.id)}" tabindex="0" role="link">
         <td class="time-col-text">${escapeHtml(c.time)}</td>
         <td><span class="animal-name-bold">${escapeHtml(c.name)}</span></td>
         <td>${escapeHtml(c.displayId || "—")}</td>
         <td>${escapeHtml(c.species)}</td>
         <td class="vitals-text-bold">${escapeHtml(c.tests)}</td>
-        <td><span class="badge-status ${c.statusClass}">${escapeHtml(c.statusLabel)}</span></td>
-      </tr>`
-      )
+        <td>${badgeHtml}</td>
+      </tr>`;
+      })
       .join("");
 
     body.querySelectorAll("tr[data-pet-id]").forEach((row) => {
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".cv-status-badge")) return;
         global.VetAppPages?.openAnimalHistory?.(row.getAttribute("data-pet-id"));
       });
       row.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
+          if (e.target.closest(".cv-status-badge")) return;
           e.preventDefault();
           global.VetAppPages?.openAnimalHistory?.(row.getAttribute("data-pet-id"));
         }

@@ -730,23 +730,23 @@
           if (tests.has("Heart Sound")) local.testCounts.heart += 1;
           if (tests.has("Lung Sound")) local.testCounts.lung += 1;
 
-          if (tempVal != null) {
-            if (tempVal > 38.6 || tempVal < 37.2) {
-              statusLabel = tempVal > 38.6 ? "Critical" : "Low";
-              statusClass = "critical";
-              local.statusCounts.failed += 1;
-              local.riskFlaggedCount += 1;
-            } else {
-              local.statusCounts.completed += 1;
-            }
-          } else if (tests.has("Heart Sound") || tests.has("Lung Sound")) {
+          const tempEval = global.VetStatusEngine?.evaluate
+            ? global.VetStatusEngine.evaluate(tempVal, meta.species, tests)
+            : {
+                statusLabel: tempVal != null ? (tempVal > 39.2 || tempVal < 37.2 ? "Critical" : "Normal") : (tests.size > 0 ? "Normal" : "In Progress"),
+                statusClass: tempVal != null ? (tempVal > 39.2 || tempVal < 37.2 ? "critical" : "normal") : (tests.size > 0 ? "normal" : "in-progress"),
+              };
+
+          statusLabel = tempEval.statusLabel;
+          statusClass = tempEval.statusClass;
+
+          if (statusClass === "critical") {
+            local.statusCounts.failed += 1;
+            local.riskFlaggedCount += 1;
+          } else if (statusClass === "normal" || statusClass === "mild") {
             local.statusCounts.completed += 1;
-            statusLabel = "Completed";
-            statusClass = "stable";
           } else {
             local.statusCounts.inProgress += 1;
-            statusLabel = "In Progress";
-            statusClass = "low";
           }
 
           const ts =
@@ -765,6 +765,7 @@
               temp: tempVal != null ? `${tempVal.toFixed(1)}°C` : "No Reading",
               statusLabel,
               statusClass,
+              statusInfo: tempEval,
               timestamp: ts,
             });
 
@@ -775,8 +776,10 @@
               id: petId,
               species: meta.species,
               tests: Array.from(tests).join(", ") || "Temperature",
+              temp: tempVal != null ? `${tempVal.toFixed(1)}°C` : "—",
               statusLabel,
               statusClass,
+              statusInfo: tempEval,
               timestamp: ts,
               sessionId: String(sid || "").trim(),
             });
@@ -786,12 +789,11 @@
       // Recent Cases includes comparisons (richest clinical data)
       for (const row of local.comparisons) {
         const mean = row.incomplete ? null : row.metrics?.mean;
-        let statusLabel = "Completed";
-        let statusClass = "stable";
-        if (mean != null && mean > 0 && (mean > 38.6 || mean < 37.2)) {
-          statusLabel = mean > 38.6 ? "Critical" : "Low";
-          statusClass = "critical";
-        }
+        const compEval = global.VetStatusEngine?.evaluate
+          ? global.VetStatusEngine.evaluate(mean, row.species, "Temperature")
+          : { statusLabel: "Normal", statusClass: "normal" };
+        const statusLabel = compEval.statusLabel;
+        const statusClass = compEval.statusClass;
         const d = row.timestamp ? new Date(row.timestamp) : null;
         const timeStr = d ? istTimeFormatter.format(d) : "—";
         const existingIdx = local.cases.findIndex(
@@ -804,8 +806,10 @@
           id: row.id,
           species: row.species,
           tests: "Temperature",
+          temp: mean != null ? `${mean.toFixed(1)}°C` : "—",
           statusLabel,
           statusClass,
+          statusInfo: compEval,
           timestamp: row.timestamp || 0,
           sessionId: String(row.sessionId || "").trim(),
         };
@@ -1186,16 +1190,13 @@
       const caseMap = new Map();
       dashboardComparisons.forEach((row) => {
         const mean = row.incomplete ? null : row.metrics?.mean;
-        let statusLabel = "Completed";
-        let statusClass = "stable";
-        if (mean != null && mean > 0 && (mean > 38.6 || mean < 37.2)) {
-          statusLabel = mean > 38.6 ? "Critical" : "Low";
-          statusClass = "critical";
-        }
         const cCase = cases.find((c) => String(c.id) === String(row.id));
         const testsDesc = cCase?.tests || (row.incomplete ? "Heart Sound" : "Temperature");
-        const finalStatus = cCase?.statusLabel || statusLabel;
-        const finalClass = cCase?.statusClass || statusClass;
+        const tempEval = cCase?.statusInfo || (global.VetStatusEngine?.evaluate
+          ? global.VetStatusEngine.evaluate(mean, row.species, testsDesc)
+          : { statusLabel: "Normal", statusClass: "normal" });
+        const finalStatus = tempEval.statusLabel || "Normal";
+        const finalClass = tempEval.statusClass || "normal";
         const d = row.timestamp ? new Date(row.timestamp) : null;
         const timeStr = d ? istTimeFormatter.format(d) : (cCase?.time || "—");
         caseMap.set(String(row.id), {
@@ -1205,8 +1206,10 @@
           id: row.id,
           species: row.species,
           tests: testsDesc,
+          temp: mean != null ? `${mean.toFixed(1)}°C` : (cCase?.temp || "—"),
           statusLabel: finalStatus,
           statusClass: finalClass,
+          statusInfo: tempEval,
           timestamp: row.timestamp || cCase?.timestamp || 0,
           sessionId: String(row.sessionId || cCase?.sessionId || "").trim(),
         });
@@ -1224,15 +1227,20 @@
         const hasPet = Array.from(caseMap.values()).some((c) => String(c.id) === petId);
         if (!hasPet) {
           const meta = petMetaOf(petId, p, p);
+          const tempEval = global.VetStatusEngine?.evaluate
+            ? global.VetStatusEngine.evaluate(null, meta.species, null)
+            : { statusLabel: "In Progress", statusClass: "in-progress" };
           caseMap.set(`daily-${petId}`, {
             time: "—",
             name: meta.name,
             displayId: meta.displayId || "—",
             id: petId,
             species: meta.species,
-            tests: "Temperature",
-            statusLabel: "In Progress",
-            statusClass: "low",
+            tests: "Pending",
+            temp: "—",
+            statusLabel: tempEval.statusLabel,
+            statusClass: tempEval.statusClass,
+            statusInfo: tempEval,
             timestamp: 0,
             sessionId: "",
           });
