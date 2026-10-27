@@ -1,4 +1,4 @@
-const CACHE_NAME = "vetinstant-dashboard-v61";
+const CACHE_NAME = "vetinstant-dashboard-v62";
 
 const APP_SHELL_FILES = [
   "./",

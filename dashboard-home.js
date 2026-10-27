@@ -36,43 +36,52 @@
     }
   }
 
+  function normalizeToCoreSpecies(rawKey) {
+    const s = String(rawKey || "").trim().toLowerCase();
+    if (s.includes("cattle") || s.includes("cow") || s.includes("bovine") || s.includes("bull")) return "Cattle";
+    if (s.includes("dog") || s.includes("canine")) return "Dogs";
+    if (s.includes("cat") || s.includes("feline")) return "Cats";
+    if (s.includes("horse") || s.includes("equine")) return "Horses";
+    return null;
+  }
+
   function renderSpeciesCards(speciesCounts, total) {
     const root = document.getElementById("cv-species-cards");
     if (!root) return;
 
-    const counts = speciesCounts || {};
+    // Fixed 4 core species that are ALWAYS visible
+    const coreCounts = {
+      Dogs: 0,
+      Cats: 0,
+      Cattle: 0,
+      Horses: 0,
+    };
 
-    // Standard 4 species that must ALWAYS be visible in the strip
-    const standardSpecies = [
-      { id: "dogs", defaultLabel: "Dogs", match: (k) => /dog/i.test(k) },
-      { id: "cats", defaultLabel: "Cats", match: (k) => /cat/i.test(k) },
-      { id: "cattle", defaultLabel: "Cattle", match: (k) => /cattle|cow|bovine/i.test(k) },
-      { id: "horses", defaultLabel: "Horses", match: (k) => /horse|equine/i.test(k) },
+    const extras = {};
+
+    Object.entries(speciesCounts || {}).forEach(([k, v]) => {
+      const num = Number(v) || 0;
+      const core = normalizeToCoreSpecies(k);
+      if (core) {
+        coreCounts[core] = (coreCounts[core] || 0) + num;
+      } else {
+        extras[k] = (extras[k] || 0) + num;
+      }
+    });
+
+    const items = [
+      { name: "Dogs", count: coreCounts.Dogs, style: speciesStyle("dog") },
+      { name: "Cats", count: coreCounts.Cats, style: speciesStyle("cat") },
+      { name: "Cattle", count: coreCounts.Cattle, style: speciesStyle("cattle") },
+      { name: "Horses", count: coreCounts.Horses, style: speciesStyle("horse") },
     ];
 
-    const renderedItems = [];
-    const usedKeys = new Set();
-
-    standardSpecies.forEach(({ id, defaultLabel, match }) => {
-      const foundKey = Object.keys(counts).find((k) => match(k));
-      let count = 0;
-      let label = defaultLabel;
-      if (foundKey) {
-        usedKeys.add(foundKey);
-        count = Number(counts[foundKey]) || 0;
-        label = foundKey;
-      }
-      renderedItems.push({ name: label, count, style: speciesStyle(id) });
+    // If any unexpected extra species exist, append them
+    Object.entries(extras).forEach(([k, num]) => {
+      items.push({ name: k, count: num, style: speciesStyle(k) });
     });
 
-    // Also include any other species that might exist in counts
-    Object.entries(counts).forEach(([k, v]) => {
-      if (!usedKeys.has(k)) {
-        renderedItems.push({ name: k, count: Number(v) || 0, style: speciesStyle(k) });
-      }
-    });
-
-    root.innerHTML = renderedItems
+    root.innerHTML = items
       .map(({ name, count, style }) => {
         const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
         return `
