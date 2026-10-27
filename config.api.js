@@ -7,5 +7,5 @@ window.API_CONFIG = {
   deviceId: "ARMY",
   allowedDevices: ["ARMY", "BRUNO", "ARCHIT", "ZARA", "ROCKY"],
   password: "army",
-  timeoutMs: 25000,
+  timeoutMs: 35000,
 };

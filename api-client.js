@@ -12,7 +12,7 @@
       this.baseUrl = String(c.baseUrl || "").replace(/\/$/, "");
       this.deviceId = String(c.deviceId || "").trim().toUpperCase();
       this.sessionToken = String(c.sessionToken || "").trim();
-      this.timeoutMs = Number(c.timeoutMs) || 25000;
+      this.timeoutMs = Number(c.timeoutMs) || 35000;
       if (!this.baseUrl) throw new Error("API baseUrl is required (config.api.js).");
     }
 
@@ -91,6 +91,11 @@
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("application/json")) return res.json();
         return res.text();
+      } catch (err) {
+        if (controller.signal.aborted || err.name === "AbortError") {
+          throw new Error(`Request to ${endpoint} timed out after ${Math.round(this.timeoutMs / 1000)}s. Please check connection.`);
+        }
+        throw err;
       } finally {
         clearTimeout(timer);
       }
@@ -125,6 +130,11 @@
           throw new Error(`HTTP ${res.status} when downloading binary ${endpoint}`);
         }
         return res.arrayBuffer();
+      } catch (err) {
+        if (controller.signal.aborted || err.name === "AbortError") {
+          throw new Error(`Download of ${endpoint} timed out. Please try again.`);
+        }
+        throw err;
       } finally {
         clearTimeout(timer);
       }
@@ -371,6 +381,11 @@
           throw new Error(`HTTP ${res.status} when downloading audio`);
         }
         return res.arrayBuffer();
+      } catch (err) {
+        if (controller.signal.aborted || err.name === "AbortError") {
+          throw new Error(`Audio download timed out. Please try again.`);
+        }
+        throw err;
       } finally {
         clearTimeout(timer);
       }

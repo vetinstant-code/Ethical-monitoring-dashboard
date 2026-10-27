@@ -209,23 +209,36 @@
     const root = document.getElementById("vitals-today-root");
     const sub = document.getElementById("vitals-today-subtitle");
     const date = getSelectedDate();
-    if (sub) sub.textContent = `Animals with vitals on ${date}. Select one for temperature history.`;
+    if (sub) sub.textContent = `All animals tested on ${date}. Select one to view temperature history.`;
     if (!root) return;
     root.innerHTML = `<p class="empty-state">Loading today’s animals…</p>`;
 
     try {
       const client = await ensureClient();
-      const allPets = await loadAllPets(client);
-      const resolved = global.VetLiveApi?.resolvePetsForDate
-        ? await global.VetLiveApi.resolvePetsForDate(client, date, allPets)
-        : { list: (await client.dailyPets(date))?.pets || [], source: "daily-pets" };
-      const pets = resolved.list || [];
+      let pets = [];
+      const cached = global.VetLiveApi?.getDailyPetsList?.(date);
+      if (Array.isArray(cached) && cached.length) {
+        pets = cached;
+      } else {
+        const resp = await client.dailyPets(date).catch(() => null);
+        pets = (resp?.pets || []).map((p) => ({
+          ...p,
+          pet_id: p.pet_id || p.id,
+          id: p.pet_id || p.id,
+          name: p.pet_name || p.name,
+          pet_name: p.pet_name || p.name,
+        }));
+      }
+
       if (!pets.length) {
-        const hint =
-          resolved.source === "none"
-            ? " No exam sessions were recorded on this date — try 2026-07-02 or 2026-07-03 for recent data."
-            : "";
-        root.innerHTML = `<p class="empty-state">No animals with vitals on ${escapeHtml(date)}.${hint}</p>`;
+        const allPets = await loadAllPets(client);
+        const resolved = global.VetLiveApi?.resolvePetsForDate
+          ? await global.VetLiveApi.resolvePetsForDate(client, date, allPets)
+          : { list: [], source: "none" };
+        pets = resolved.list || [];
+      }
+      if (!pets.length) {
+        root.innerHTML = `<p class="empty-state">No animals recorded on ${escapeHtml(date)}.</p>`;
         return;
       }
 
@@ -499,7 +512,7 @@
 
     if (name === "vitals-today") {
       showView("vitals-today");
-      setHeader("Vitals Checked Today", "Animals taken on the selected date.", true);
+      setHeader("Animals Tested Today", "Animals tested on the selected date.", true);
       document.body.classList.remove("reports-mode");
       global.VetDashboardFilters?.showBar?.(false);
       await renderVitalsTodayPage();
@@ -539,7 +552,7 @@
 
   function bindUi() {
     document.getElementById("kpi-card-total-animals")?.addEventListener("click", () => {
-      navigate("/animals");
+      navigate("/vitals-today");
     });
     document.getElementById("kpi-card-vitals-today")?.addEventListener("click", () => {
       navigate("/vitals-today");

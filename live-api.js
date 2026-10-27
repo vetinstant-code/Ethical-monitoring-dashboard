@@ -441,7 +441,7 @@
       const dailyResponse = await client.dailyPets(targetDate).catch(() => null);
       list = (dailyResponse?.pets || []).map(dailyPetRowFrom);
     }
-    if (list.length && !supplementDaily) return { list, source: "daily-pets" };
+    if (list.length) return { list, source: "daily-pets" };
 
     const registered = (allPets || []).map(dailyPetRowFrom).filter((p) => p.pet_id || p.id);
     if (!registered.length) {
@@ -710,7 +710,7 @@
 
           if (tempVal != null) tests.add("Temperature");
 
-          if (fetchAudio) {
+          if (fetchAudio || tempVal == null) {
             const recResp = await client.recordings(petId, sid).catch(() => null);
             if (gen != null && gen !== syncGeneration) return local;
             if (recResp) {
@@ -739,6 +739,10 @@
             } else {
               local.statusCounts.completed += 1;
             }
+          } else if (tests.has("Heart Sound") || tests.has("Lung Sound")) {
+            local.statusCounts.completed += 1;
+            statusLabel = "Completed";
+            statusClass = "stable";
           } else {
             local.statusCounts.inProgress += 1;
             statusLabel = "In Progress";
@@ -1013,16 +1017,13 @@
 
       let resolved;
       const hasDailyPets = (dailyResp?.pets || []).length > 0;
-      const supplementToday = targetDate === todayIsoIst();
-      if (hasDailyPets && !supplementToday) {
+      if (hasDailyPets) {
         resolved = {
           list: dailyResp.pets.map(dailyPetRowFrom),
           source: "daily-pets",
         };
       } else {
-        setProgress(12, supplementToday
-          ? "Checking today’s sessions and temperatures…"
-          : "Scanning exam sessions and temperatures…");
+        setProgress(12, "Scanning exam sessions and temperatures…");
         if (!store.pets.length) {
           const freshPets = await client.listPets().catch(() => []);
           if (gen !== syncGeneration) return;
@@ -1034,7 +1035,7 @@
           store.pets,
           dailyResp,
           gen,
-          supplementToday
+          false
         );
       }
       if (gen !== syncGeneration) return;
@@ -1045,6 +1046,7 @@
         const meta = petMetaOf(p.pet_id || p.id, p, p);
         return global.VetDashboardFilters?.matchesAnimalType?.(meta.species);
       });
+      store.dailyPetsList = dailyPetsList;
 
       const yesterdayCount = yResp ? (yResp.pets || []).length : null;
 
@@ -1148,6 +1150,32 @@
           }
         }
       });
+
+      // Ensure every tested/daily animal on this date appears in the comparison table
+      dailyPetsList.forEach((p) => {
+        const petKey = String(p.pet_id || p.id || "");
+        if (petKey && !latestComparisonsByPet.has(petKey)) {
+          const meta = petMetaOf(petKey, p, p);
+          const cCase = cases.find((c) => String(c.id) === petKey);
+          const act = activities.find((a) => String(a.id) === petKey);
+          const ts = cCase?.timestamp || act?.timestamp || 0;
+          latestComparisonsByPet.set(petKey, {
+            id: petKey,
+            name: meta.name,
+            displayId: meta.displayId || "—",
+            species: meta.species,
+            sessionId: cCase?.sessionId || "",
+            examD: 0,
+            reference: 0,
+            metrics: zeroFillMetrics(null),
+            errMax: 0,
+            acceptancePass: null,
+            incomplete: true,
+            timestamp: ts,
+          });
+        }
+      });
+
       const dashboardComparisons = Array.from(latestComparisonsByPet.values()).sort((a, b) => {
         const byName = (a.name || "").localeCompare(b.name || "");
         if (byName) return byName;
@@ -1164,19 +1192,23 @@
           statusLabel = mean > 38.6 ? "Critical" : "Low";
           statusClass = "critical";
         }
+        const cCase = cases.find((c) => String(c.id) === String(row.id));
+        const testsDesc = cCase?.tests || (row.incomplete ? "Heart Sound" : "Temperature");
+        const finalStatus = cCase?.statusLabel || statusLabel;
+        const finalClass = cCase?.statusClass || statusClass;
         const d = row.timestamp ? new Date(row.timestamp) : null;
-        const timeStr = d ? istTimeFormatter.format(d) : "—";
+        const timeStr = d ? istTimeFormatter.format(d) : (cCase?.time || "—");
         caseMap.set(String(row.id), {
           time: timeStr,
           name: row.name,
           displayId: row.displayId || "—",
           id: row.id,
           species: row.species,
-          tests: "Temperature",
-          statusLabel,
-          statusClass,
-          timestamp: row.timestamp || 0,
-          sessionId: String(row.sessionId || "").trim(),
+          tests: testsDesc,
+          statusLabel: finalStatus,
+          statusClass: finalClass,
+          timestamp: row.timestamp || cCase?.timestamp || 0,
+          sessionId: String(row.sessionId || cCase?.sessionId || "").trim(),
         });
       });
 
@@ -1468,5 +1500,6 @@
     ensureClient,
     resolvePetsForDate,
     getPets: () => store.pets.slice(),
+    getDailyPetsList: (d) => (!d || d === getDashboardDate() ? (store.dailyPetsList || []).slice() : null),
   };
 })(window);
