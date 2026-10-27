@@ -211,10 +211,21 @@
   async function renderVitalsTodayPage(filter = "all") {
     const root = document.getElementById("vitals-today-root");
     const sub = document.getElementById("vitals-today-subtitle");
+    const cardTitle = document.getElementById("vitals-today-card-title");
     const date = getSelectedDate();
     if (!root) return;
 
     const normalizedFilter = String(filter || "all").toLowerCase();
+
+    if (cardTitle) {
+      if (normalizedFilter === "successful") {
+        cardTitle.textContent = "Successful Cases Today";
+      } else if (normalizedFilter === "incomplete") {
+        cardTitle.textContent = "Incomplete Cases Today";
+      } else {
+        cardTitle.textContent = "Animals Tested Today";
+      }
+    }
 
     if (sub) {
       if (normalizedFilter === "successful") {
@@ -222,11 +233,12 @@
       } else if (normalizedFilter === "incomplete") {
         sub.textContent = `Incomplete cases on ${date}. Detailed checklist shows which measurements (audio or temperature) are missing.`;
       } else {
-        sub.textContent = `All animals tested on ${date}. Review protocol completion status and select any animal for detailed history.`;
+        sub.textContent = `All animals evaluated on ${date}. Review protocol completion status and select any animal for detailed history.`;
       }
     }
 
-    let cases = global.VetLiveApi?.getLastCases?.() || [];
+    try {
+      let cases = global.VetLiveApi?.getLastCases?.() || [];
 
     if (!cases.length) {
       root.innerHTML = `
@@ -510,7 +522,11 @@
 
     // Enqueue incomplete cases for background root cause investigation
     global.VetDiagInvestigator?.enqueueCases?.(uniqueCases, date);
+  } catch (err) {
+    console.error("renderVitalsTodayPage error:", err);
+    root.innerHTML = `<p class="empty-state">Failed to load vitals: ${escapeHtml(err.message || err)}</p>`;
   }
+}
 
   function statusFromTemp(temp, species = "dog") {
     if (global.VetStatusEngine?.evaluate) {
@@ -761,7 +777,7 @@
 
   async function route() {
     if (!global.VetAuth?.isLoggedIn?.()) return;
-    const { name, petId } = parseHash();
+    const { name, petId, filter } = parseHash();
 
     if (name === "animals") {
       showView("animals");

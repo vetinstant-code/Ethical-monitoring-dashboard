@@ -19,7 +19,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=65" />
+  <link rel="stylesheet" href="styles.css?v=66" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -450,7 +450,7 @@
       <div id="view-vitals-today" class="app-view" hidden>
         <article class="standard-card page-panel-card">
           <div class="card-header-block">
-            <h2 class="card-title">Animals Tested Today</h2>
+            <h2 class="card-title" id="vitals-today-card-title">Animals Tested Today</h2>
             <p class="card-subtitle" id="vitals-today-subtitle">Animals tested on the selected date. Select one for history.</p>
           </div>
           <div id="vitals-today-root" class="page-panel-body">
@@ -764,25 +764,25 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="config.api.js?v=65"></script>
-  <script src="api-client.js?v=65"></script>
-  <script src="auth.js?v=65"></script>
-  <script src="api-adapter.js?v=65"></script>
-  <script src="app-filters.js?v=65"></script>
-  <script src="excel-generator.js?v=65"></script>
-  <script src="vitals-status-engine.js?v=65"></script>
-  <script src="diag-codebooks.js?v=65"></script>
-  <script src="diag-investigator.js?v=65"></script>
-  <script src="dashboard-home.js?v=65"></script>
-  <script src="live-api.js?v=65"></script>
-  <script src="app-pages.js?v=65"></script>
-  <script src="reports-page.js?v=65"></script>
-  <script src="login-fx.js?v=65"></script>
+  <script src="config.api.js?v=66"></script>
+  <script src="api-client.js?v=66"></script>
+  <script src="auth.js?v=66"></script>
+  <script src="api-adapter.js?v=66"></script>
+  <script src="app-filters.js?v=66"></script>
+  <script src="excel-generator.js?v=66"></script>
+  <script src="vitals-status-engine.js?v=66"></script>
+  <script src="diag-codebooks.js?v=66"></script>
+  <script src="diag-investigator.js?v=66"></script>
+  <script src="dashboard-home.js?v=66"></script>
+  <script src="live-api.js?v=66"></script>
+  <script src="app-pages.js?v=66"></script>
+  <script src="reports-page.js?v=66"></script>
+  <script src="login-fx.js?v=66"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("./service-worker.js?v=65")
+          .register("./service-worker.js?v=66")
           .then((reg) => {
             // Check for service worker updates immediately on page load
             reg.update();
