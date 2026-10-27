@@ -1169,7 +1169,7 @@
 
       const yesterdayCount = yResp ? (yResp.pets || []).length : null;
 
-      const earlySpecies = {};
+      const earlySpecies = { Dogs: 0, Cattle: 0, Cats: 0, Horses: 0 };
       dailyPetsList.forEach((p) => {
         const meta = petMetaOf(p.pet_id || p.id, p, p);
         earlySpecies[meta.species] = (earlySpecies[meta.species] || 0) + 1;
@@ -1404,7 +1404,7 @@
         .map((h) => ({ label: `${String(h).padStart(2, "0")}:00`, count: hourlyMap[h] }))
         .sort((a, b) => a.label.localeCompare(b.label));
 
-      const speciesCounts = {};
+      const speciesCounts = { Dogs: 0, Cattle: 0, Cats: 0, Horses: 0 };
       dailyPetsList.forEach((p) => {
         const meta = petMetaOf(p.pet_id || p.id, p, p);
         speciesCounts[meta.species] = (speciesCounts[meta.species] || 0) + 1;

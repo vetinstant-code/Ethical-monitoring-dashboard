@@ -39,14 +39,41 @@
   function renderSpeciesCards(speciesCounts, total) {
     const root = document.getElementById("cv-species-cards");
     if (!root) return;
-    const entries = Object.entries(speciesCounts).sort((a, b) => b[1] - a[1]);
-    if (!entries.length) {
-      root.innerHTML = `<div class="cv-species-empty">No species data for this date.</div>`;
-      return;
-    }
-    root.innerHTML = entries
-      .map(([name, count]) => {
-        const style = speciesStyle(name);
+
+    const counts = speciesCounts || {};
+
+    // Standard 4 species that must ALWAYS be visible in the strip
+    const standardSpecies = [
+      { id: "dogs", defaultLabel: "Dogs", match: (k) => /dog/i.test(k) },
+      { id: "cats", defaultLabel: "Cats", match: (k) => /cat/i.test(k) },
+      { id: "cattle", defaultLabel: "Cattle", match: (k) => /cattle|cow|bovine/i.test(k) },
+      { id: "horses", defaultLabel: "Horses", match: (k) => /horse|equine/i.test(k) },
+    ];
+
+    const renderedItems = [];
+    const usedKeys = new Set();
+
+    standardSpecies.forEach(({ id, defaultLabel, match }) => {
+      const foundKey = Object.keys(counts).find((k) => match(k));
+      let count = 0;
+      let label = defaultLabel;
+      if (foundKey) {
+        usedKeys.add(foundKey);
+        count = Number(counts[foundKey]) || 0;
+        label = foundKey;
+      }
+      renderedItems.push({ name: label, count, style: speciesStyle(id) });
+    });
+
+    // Also include any other species that might exist in counts
+    Object.entries(counts).forEach(([k, v]) => {
+      if (!usedKeys.has(k)) {
+        renderedItems.push({ name: k, count: Number(v) || 0, style: speciesStyle(k) });
+      }
+    });
+
+    root.innerHTML = renderedItems
+      .map(({ name, count, style }) => {
         const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
         return `
           <article class="cv-species-card">
