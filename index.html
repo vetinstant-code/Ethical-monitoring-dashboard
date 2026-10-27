@@ -19,7 +19,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=62" />
+  <link rel="stylesheet" href="styles.css?v=63" />
 </head>
 <body>
   <!-- LOGIN SCREEN -->
@@ -352,7 +352,7 @@
                 <strong id="cv-sum-success">0</strong>
               </div>
               <div class="cv-summary-box">
-                <span>Failed Cases</span>
+                <span>Incomplete Cases</span>
                 <strong id="cv-sum-failed">0</strong>
               </div>
               <div class="cv-summary-box cv-summary-box--rate">
@@ -764,23 +764,23 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="config.api.js?v=62"></script>
-  <script src="api-client.js?v=62"></script>
-  <script src="auth.js?v=62"></script>
-  <script src="api-adapter.js?v=62"></script>
-  <script src="app-filters.js?v=62"></script>
-  <script src="excel-generator.js?v=62"></script>
-  <script src="vitals-status-engine.js?v=62"></script>
-  <script src="dashboard-home.js?v=62"></script>
-  <script src="live-api.js?v=62"></script>
-  <script src="app-pages.js?v=62"></script>
-  <script src="reports-page.js?v=62"></script>
-  <script src="login-fx.js?v=62"></script>
+  <script src="config.api.js?v=63"></script>
+  <script src="api-client.js?v=63"></script>
+  <script src="auth.js?v=63"></script>
+  <script src="api-adapter.js?v=63"></script>
+  <script src="app-filters.js?v=63"></script>
+  <script src="excel-generator.js?v=63"></script>
+  <script src="vitals-status-engine.js?v=63"></script>
+  <script src="dashboard-home.js?v=63"></script>
+  <script src="live-api.js?v=63"></script>
+  <script src="app-pages.js?v=63"></script>
+  <script src="reports-page.js?v=63"></script>
+  <script src="login-fx.js?v=63"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("./service-worker.js?v=62")
+          .register("./service-worker.js?v=63")
           .then((reg) => {
             // Check for service worker updates immediately on page load
             reg.update();
