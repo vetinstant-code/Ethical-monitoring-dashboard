@@ -710,16 +710,24 @@
 
           if (tempVal != null) tests.add("Temperature");
 
-          if (fetchAudio || tempVal == null) {
-            const recResp = await client.recordings(petId, sid).catch(() => null);
-            if (gen != null && gen !== syncGeneration) return local;
-            if (recResp) {
-              normalizeRecordings(recResp).forEach((r) => {
-                const container = String(r._audio_container || r.organ || r.recording_type || "").toLowerCase();
-                if (container.includes("heart")) tests.add("Heart Sound");
-                else if (container.includes("lung")) tests.add("Lung Sound");
-              });
-            }
+          // Always check stethoscope recordings for this session so auscultation audio is never skipped
+          const recResp = await client.recordings(petId, sid).catch(() => null);
+          if (gen != null && gen !== syncGeneration) return local;
+          if (recResp) {
+            normalizeRecordings(recResp).forEach((r) => {
+              const container = String(
+                r._audio_container ||
+                r.organ ||
+                r.recording_type ||
+                r.type ||
+                r.title ||
+                r.category ||
+                r.name ||
+                ""
+              ).toLowerCase();
+              if (container.includes("heart") || container.includes("cardiac")) tests.add("Heart Sound");
+              if (container.includes("lung") || container.includes("pulmonary") || container.includes("respiratory")) tests.add("Lung Sound");
+            });
           }
 
           if (!global.VetDashboardFilters?.matchesTestType?.(tests)) continue;
@@ -1240,16 +1248,18 @@
         } else {
           const existing = caseMap.get(pKey);
           // Update existing with newer timestamp or richer tests/readings
+          const prev = (existing.tests || "").split(", ").map((s) => s.trim()).filter((s) => s && s !== "—" && s !== "Pending");
+          const curr = (c.tests || "").split(", ").map((s) => s.trim()).filter((s) => s && s !== "—" && s !== "Pending");
+          const mergedTests = Array.from(new Set([...prev, ...curr])).join(", ");
+          if (mergedTests) existing.tests = mergedTests;
+
           if ((c.timestamp || 0) > (existing.timestamp || 0)) {
             existing.time = c.time || existing.time;
             existing.timestamp = c.timestamp;
-            if (c.tests && c.tests !== "Pending") existing.tests = c.tests;
             if (c.temp && c.temp !== "—") existing.temp = c.temp;
             if (c.statusInfo) existing.statusInfo = c.statusInfo;
             if (c.statusLabel) existing.statusLabel = c.statusLabel;
             if (c.statusClass) existing.statusClass = c.statusClass;
-          } else if (c.tests && existing.tests === "Temperature" && c.tests !== "Temperature") {
-            existing.tests = c.tests;
           }
         }
       });
