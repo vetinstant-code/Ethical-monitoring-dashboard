@@ -797,31 +797,35 @@
       // Recent Cases includes comparisons (richest clinical data)
       for (const row of local.comparisons) {
         const mean = row.incomplete ? null : row.metrics?.mean;
-        const compEval = global.VetStatusEngine?.evaluate
-          ? global.VetStatusEngine.evaluate(mean, row.species, "Temperature")
-          : { statusLabel: "Normal", statusClass: "normal" };
-        const statusLabel = compEval.statusLabel;
-        const statusClass = compEval.statusClass;
-        const d = row.timestamp ? new Date(row.timestamp) : null;
-        const timeStr = d ? istTimeFormatter.format(d) : "—";
         const existingIdx = local.cases.findIndex(
           (c) =>
             (c.sessionId && c.sessionId === String(row.sessionId).trim()) ||
             String(c.id) === String(row.id)
         );
+        const existingCase = existingIdx >= 0 ? local.cases[existingIdx] : null;
+        const testsDesc = existingCase?.tests || "Temperature";
+
+        const compEval = global.VetStatusEngine?.evaluate
+          ? global.VetStatusEngine.evaluate(mean, row.species, testsDesc)
+          : { statusLabel: "Normal", statusClass: "normal" };
+        const statusLabel = compEval.statusLabel;
+        const statusClass = compEval.statusClass;
+        const d = row.timestamp ? new Date(row.timestamp) : null;
+        const timeStr = d ? istTimeFormatter.format(d) : (existingCase?.time || "—");
+
         const compCase = {
           time: timeStr,
           name: row.name,
           displayId: row.displayId || "—",
           id: row.id,
           species: row.species,
-          tests: "Temperature",
-          temp: mean != null ? `${mean.toFixed(1)}°C` : "—",
+          tests: testsDesc,
+          temp: mean != null ? `${mean.toFixed(1)}°C` : (existingCase?.temp || "—"),
           statusLabel,
           statusClass,
           statusInfo: compEval,
-          timestamp: row.timestamp || 0,
-          sessionId: String(row.sessionId || "").trim(),
+          timestamp: row.timestamp || existingCase?.timestamp || 0,
+          sessionId: String(row.sessionId || existingCase?.sessionId || "").trim(),
         };
         if (existingIdx >= 0) {
           local.cases[existingIdx] = compCase;
