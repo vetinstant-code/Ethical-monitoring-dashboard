@@ -150,11 +150,26 @@
   function renderRecentCases(cases) {
     const body = document.getElementById("cv-recent-cases-body");
     if (!body) return;
-    if (!cases.length) {
+    if (!cases || !cases.length) {
       body.innerHTML = `<tr><td colspan="6" class="empty-state">No cases recorded on this date.</td></tr>`;
       return;
     }
-    body.innerHTML = cases
+
+    // Strict deduplication by Animal Name & ID so no animal is ever rendered twice
+    const seen = new Set();
+    const uniqueCases = [];
+    for (const c of cases) {
+      const name = String(c.name || "").trim().toLowerCase();
+      const did = String(c.displayId || "").trim().toLowerCase();
+      const id = String(c.id || "").trim().toLowerCase();
+      const key = name && did && did !== "—" ? `${name}__${did}` : name || id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueCases.push(c);
+      }
+    }
+
+    body.innerHTML = uniqueCases
       .map((c) => {
         const badgeHtml = global.VetStatusEngine?.renderBadgeHtml
           ? global.VetStatusEngine.renderBadgeHtml(c.statusInfo || {
