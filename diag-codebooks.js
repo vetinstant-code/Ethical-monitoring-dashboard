@@ -100,11 +100,23 @@
   };
 
   function normalizeCode(rawCode, familyId, codeId) {
-    if (rawCode && typeof rawCode === "string" && !rawCode.startsWith("F")) {
-      return rawCode.trim();
+    let fam = Number(familyId || 0);
+    let cod = Number(codeId || 0);
+
+    if (rawCode && typeof rawCode === "string") {
+      const trimmed = rawCode.trim();
+      // If formatted like SF-10, PM-55, TL-07, WF-01
+      if (/^[A-Za-z]{2}-\d+$/i.test(trimmed)) {
+        return trimmed.toUpperCase();
+      }
+      // If formatted like F18-55, F04-10, F14-07 (Hex Family - Decimal Code)
+      const fMatch = trimmed.match(/^F([0-9A-Fa-f]{1,2})[-_](\d+)$/);
+      if (fMatch) {
+        if (!fam) fam = parseInt(fMatch[1], 16);
+        if (!cod) cod = parseInt(fMatch[2], 10);
+      }
     }
-    const fam = Number(familyId || 0);
-    const cod = Number(codeId || 0);
+
     if (fam === 24) return `PM-${String(cod).padStart(2, "0")}`;
     if (fam === 25) return `SD-${String(cod).padStart(2, "0")}`;
     const fObj = FAMILIES[fam];
@@ -128,7 +140,7 @@
     const fam = Number(ev.family_id || 0);
     const cod = Number(ev.code_id || 0);
     const code = normalizeCode(ev.code, fam, cod);
-    const fObj = FAMILIES[fam] || { prefix: "GEN", owner: "ESP", name: "General Telemetry" };
+    const fObj = FAMILIES[fam] || { prefix: code.split("-")[0] || "GEN", owner: (fam <= 15 ? "STM" : "ESP"), name: "Diagnostic Telemetry" };
     const owner = fObj.owner || (fam <= 15 ? "STM" : "ESP");
     const u32 = unpackU32(ev.source_session, ev.source_sequence);
 
@@ -137,6 +149,9 @@
     let status = "INFO";
     let meaning = `Diagnostic event ${code}`;
     let category = fObj.name;
+    let cmdAction = "METRIC";
+    let actionBadge = "📊 METRIC";
+    let highlightType = "metric";
 
     if (code.startsWith("PM-") || fam === 24) {
       const pm = PM_METRICS[cod];
@@ -149,6 +164,9 @@
           const s = unpackSigned(u32);
           decodedVal = `${s} dBm`;
           meaning = `Wi-Fi RF Signal Strength = ${s} dBm`;
+          cmdAction = "RF_METRIC";
+          actionBadge = "📶 RF SIGNAL";
+          highlightType = "rf";
         } else if (pm.unit === "0/1") {
           decodedVal = u32 === 1 ? "YES" : "NO";
           meaning = `${pm.name}: ${decodedVal}`;
@@ -163,40 +181,126 @@
           decodedVal = `${rTxt} (${u32})`;
           status = "WARN";
           meaning = `⚠️ Wi-Fi Disconnect Event: ${rTxt}`;
+          cmdAction = "FAULT";
+          actionBadge = "⚠️ WIFI DROP";
+          highlightType = "fault";
         } else if (pm.unit === "code" && cod === 55) {
-          const pName = POINT_NAMES[u32] || `Point_${u32}`;
-          decodedVal = `${pName} (${u32})`;
-          meaning = `Auscultation point selected: ${pName}`;
+          const pIdx = u32 < 8 ? u32 : Number(ev.source_session || 0);
+          const pName = POINT_NAMES[pIdx] || `Point_${pIdx}`;
+          decodedVal = `${pName} (${pIdx})`;
+          meaning = `🎯 Auscultation location selected on screen: ${pName}`;
+          cmdAction = "POINT_SELECT";
+          actionBadge = "🎯 POINT SELECT";
+          highlightType = "point";
+          category = "Audio Flow";
+          status = "SUCCESS";
         } else {
           decodedVal = `${u32} ${pm.unit}`;
           meaning = `${pm.name} = ${decodedVal}`;
         }
       }
-    } else if (code.startsWith("WF-") || code.startsWith("MQ-") || code.startsWith("UA-") || code.startsWith("TM-") || code.startsWith("IB-")) {
-      status = "ERROR";
-      meaning = `⚠️ Failure / Fault detected in ${fObj.name} [${code}]`;
+    }
+
+    if (code === "SF-10") {
+      cmdAction = "AUDIO_START";
+      actionBadge = "▶ AUDIO START";
+      highlightType = "start";
+      category = "Audio Flow";
+      status = "SUCCESS";
+      metricName = "Screen START Command";
+      decodedVal = `Session=0x${Number(ev.source_session || 0).toString(16)}`;
+      meaning = "🫀 Operator initiated auscultation recording on screen (SF-10)";
+    } else if (code === "SF-11") {
+      cmdAction = "AUDIO_STOP";
+      actionBadge = "■ AUDIO STOP";
+      highlightType = "stop";
+      category = "Audio Flow";
+      status = "SUCCESS";
+      metricName = "Screen STOP Command";
+      decodedVal = `Session=0x${Number(ev.source_session || 0).toString(16)}`;
+      meaning = "⏹️ Operator executed audio recording STOP command (SF-11)";
+    } else if (code === "ES-16") {
+      cmdAction = "DMA_ARMED";
+      actionBadge = "⚡ DMA ARMED";
+      highlightType = "dma";
+      category = "Audio Flow";
+      status = "SUCCESS";
+      metricName = "Audio DMA Armed";
+      meaning = "ESP32 DMA audio sampling hardware buffer armed and capturing";
+    } else if (code === "ES-18") {
+      cmdAction = "DMA_FINALIZED";
+      actionBadge = "💾 DMA FINALIZED";
+      highlightType = "dma";
+      category = "Audio Flow";
+      status = "SUCCESS";
+      metricName = "Audio DMA Finalized";
+      meaning = "ESP32 DMA audio recording block completed and committed";
     } else if (code === "SC-21") {
+      cmdAction = "TEMP_TRIGGER";
+      actionBadge = "🌡️ TEMP TRIGGER";
+      highlightType = "temp";
+      category = "Temperature Flow";
+      status = "SUCCESS";
+      metricName = "STM32 Temp Trigger";
       meaning = "🌡️ STM32 initiated & sent Temperature packet over UART to ESP32";
-      category = "Temperature Flow";
     } else if (code === "SC-20") {
-      meaning = "ESP32 ACKed Temperature packet from STM32";
+      cmdAction = "TEMP_ACK";
+      actionBadge = "🤝 TEMP ACK";
+      highlightType = "temp";
       category = "Temperature Flow";
+      status = "SUCCESS";
+      metricName = "ESP32 Temp ACK";
+      meaning = "ESP32 acknowledged temperature packet from STM32";
     } else if (code === "ES-12") {
+      cmdAction = "TEMP_VALID";
+      actionBadge = "✓ TEMP VALID";
+      highlightType = "temp";
+      category = "Temperature Flow";
+      status = "SUCCESS";
+      metricName = "Payload Checksum Valid";
       meaning = "ESP32 validated temperature payload checksum & structure";
-      category = "Temperature Flow";
     } else if (code === "ES-13") {
-      meaning = "ESP32 queued temperature reading in MQTT outbox";
+      cmdAction = "TEMP_QUEUED";
+      actionBadge = "📤 TEMP QUEUED";
+      highlightType = "temp";
       category = "Temperature Flow";
+      status = "SUCCESS";
+      metricName = "MQTT Outbox Queued";
+      meaning = "ESP32 queued temperature reading in MQTT outbox";
     } else if (code === "ES-14") {
-      meaning = "✓ AWS IoT Core MQTT broker returned QoS1 PUBACK (Cloud Accepted)";
+      cmdAction = "CLOUD_ACK";
+      actionBadge = "☁️ CLOUD ACK";
+      highlightType = "cloud";
       category = "Cloud Upload";
       status = "SUCCESS";
-    } else if (code === "SF-10") {
-      meaning = "🫀 STM32 initiated Audio Streaming START command";
-      category = "Audio Flow";
-    } else if (code === "SF-11") {
-      meaning = "⏹️ STM32 executed Audio Streaming STOP command";
-      category = "Audio Flow";
+      metricName = "AWS IoT Core QoS1 PUBACK";
+      meaning = "✓ AWS IoT Core MQTT broker returned QoS1 PUBACK (Cloud Accepted)";
+    } else if (code.startsWith("WF-") || code.startsWith("MQ-") || code.startsWith("TL-") || code.startsWith("UA-") || code.startsWith("TM-") || code.startsWith("IB-") || code === "PM-54") {
+      cmdAction = "FAULT";
+      actionBadge = `⚠️ ${code}`;
+      highlightType = "fault";
+      status = "ERROR";
+      if (code.startsWith("WF-")) {
+        category = "Wi-Fi Link";
+        meaning = `⚠️ Wi-Fi Link Fault: ${code}`;
+      } else if (code.startsWith("TL-")) {
+        category = "TLS / Network";
+        meaning = `⚠️ TLS / AWS Endpoint Reachability Error: ${code}`;
+      } else if (code.startsWith("MQ-")) {
+        category = "MQTT Cloud";
+        meaning = `⚠️ MQTT Broker / Outbox Fault: ${code}`;
+      } else if (code.startsWith("UA-") || code === "PM-54") {
+        category = "UART Link";
+        meaning = `⚠️ STM32<->ESP32 UART Link Drop: ${code}`;
+      } else if (code.startsWith("TM-") || code.startsWith("IB-")) {
+        category = "Sensors";
+        meaning = `⚠️ I2C / Sensor Probe Failure: ${code}`;
+      }
+    } else if (code.startsWith("SD-") || fam === 25) {
+      cmdAction = "STATUS_DUMP";
+      actionBadge = "📋 STATUS DUMP";
+      highlightType = "dump";
+      category = "STM32 Status Dump";
     }
 
     return {
@@ -210,6 +314,9 @@
       meaning,
       category,
       u32,
+      cmdAction,
+      actionBadge,
+      highlightType,
     };
   }
 
@@ -223,4 +330,4 @@
     unpackSigned,
     decodeEvent,
   };
-})(window);
+})(typeof window !== "undefined" ? window : global);
