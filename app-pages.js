@@ -306,18 +306,25 @@
       return;
     }
 
-    // Deduplicate cases by animal ID if multiple records exist for the same pet
+    // Deduplicate cases by canonical animal name (or ID if unnamed) so each physical animal appears once
     const caseMapByPet = new Map();
     cases.forEach((c) => {
-      const pKey = String(c.id || c.name || "").trim();
+      const cleanName = String(c.name || "").trim().toLowerCase();
+      const pKey = cleanName || String(c.id || "").trim().toLowerCase();
       if (!pKey) return;
       if (!caseMapByPet.has(pKey)) {
         caseMapByPet.set(pKey, c);
       } else {
         const cur = caseMapByPet.get(pKey);
-        // Prioritize completed or newer timestamp
+        // Prioritize completed records
         if (c.statusLabel === "Completed" && cur.statusLabel !== "Completed") {
           caseMapByPet.set(pKey, c);
+        } else if (cur.statusLabel === "Completed" && c.statusLabel !== "Completed") {
+          // keep existing completed record
+        } else if (c.statusInfo?.checklist && !cur.statusInfo?.checklist) {
+          caseMapByPet.set(pKey, c);
+        } else if (!c.statusInfo?.checklist && cur.statusInfo?.checklist) {
+          // keep existing record with checklist
         } else if ((c.timestamp || 0) > (cur.timestamp || 0)) {
           caseMapByPet.set(pKey, c);
         }

@@ -1380,11 +1380,20 @@
         }
       });
 
-      // 3. Add scheduled daily pets awaiting measurements
+      // 3. Add scheduled daily pets awaiting measurements (skip if pet already tested or present in caseMap)
       dailyPetsList.forEach((p) => {
+        const petId = String(p.pet_id || p.id);
         const pKey = petKeyOf(p);
-        if (!caseMap.has(pKey)) {
-          const petId = String(p.pet_id || p.id);
+        const cleanName = String(p.name || p.pet_name || "").trim().toLowerCase();
+        const alreadyExists =
+          caseMap.has(pKey) ||
+          Array.from(caseMap.values()).some(
+            (c) =>
+              String(c.id) === petId ||
+              (cleanName && String(c.name || "").trim().toLowerCase() === cleanName)
+          );
+
+        if (!alreadyExists) {
           const meta = petMetaOf(petId, p, p);
           const tempEval = global.VetStatusEngine?.evaluate
             ? global.VetStatusEngine.evaluate(null, meta.species, null)

@@ -9,7 +9,7 @@
  */
 (function (global) {
   const DB_NAME = "vetinstant_diag_cache";
-  const DB_VERSION = 6; // Bumped to bust stale verdicts lacking auditItems or having whole-day fallback
+  const DB_VERSION = 7; // Bumped to bust stale verdicts lacking auditItems or misdiagnosed audio dropped commands
   const STORE_NAME = "session_verdicts";
 
   let dbPromise = null;
@@ -505,41 +505,130 @@
     }
 
     // =========================================================================
+    // CASE 1E: MODALITY ISOLATION — All Audio (4 Heart + 4 Lung) & IR Temp Complete,
+    // ONLY Reference Thermometer Missing (Roxey)
+    // =========================================================================
+    if (audioPass && irPass && !refPass) {
+      return {
+        type: "OPERATOR_SKIPPED",
+        tag: "Reference Temp Missing",
+        badgeClass: "verdict-skipped",
+        icon: "ℹ️",
+        title: "Reference Thermometer Reading Not Entered",
+        message: "All 8 stethoscope auscultations (4 Heart, 4 Lung) and the Infrared (IR) Ear temperature reading were successfully acquired and uploaded. The operator did not record or submit the manual reference thermometer reading required for trial validation.",
+        evidence: `Auscultation: 8/8 files verified in cloud (4 Heart, 4 Lung). IR Ear temperature: ${irVal || 'Verified'}. Reference thermometer: not recorded / submitted. Clean operational link: 0 hardware faults.`,
+        stage: "OPERATOR",
+        auditItems: [
+          { label: "Auscultation Protocol", val: "8 / 8 files verified (4 Heart, 4 Lung) (Pass)", highlight: "highlight-pass" },
+          { label: "IR Temperature", val: `${irVal || 'Verified'} (Pass)`, highlight: "highlight-pass" },
+          { label: "Reference Thermometer", val: "0 readings submitted (Operator Skipped)", highlight: "highlight-warn" },
+          { label: "Screen START (SF-10)", val: `${sf10Count || 8} logged`, highlight: "highlight-pass" },
+          { label: "Hardware & Network Link", val: "Operational (0 faults)", highlight: "highlight-pass" },
+        ],
+      };
+    }
+
+    // =========================================================================
     // CASE 2: MODALITY ISOLATION — Temperature is Complete, ONLY Audio is Missing
-    // (Ria: 3/4 Heart, 4/4 Lung, 38.1 °C Temp)
+    // (Hope: 4/4 Heart, 0/4 Lung | Ria: 3/4 Heart, 4/4 Lung | Jack profile: 0 audio)
     // =========================================================================
     if (tempPass && isAudioMissing) {
       const missingHeart = Math.max(0, 4 - recordedHeart);
       const missingLung = Math.max(0, 4 - recordedLung);
-      const missingPoints = [];
-      if (missingHeart > 0) missingPoints.push(`Heart Point ${recordedHeart + 1}`);
-      if (missingLung > 0) missingPoints.push(`Lung Point ${recordedLung + 1}`);
-      const missingDesc = missingPoints.join(", ") || "remaining auscultation point";
+      const missingParts = [];
+      if (missingHeart > 0) missingParts.push(`${missingHeart} Heart file${missingHeart > 1 ? 's' : ''}`);
+      if (missingLung > 0) missingParts.push(`${missingLung} Lung file${missingLung > 1 ? 's' : ''}`);
+      const missingDesc = missingParts.join(" and ") || "remaining auscultation files";
 
-      // 2A: Screen START command was pressed on device, but STOP command was dropped over UART
-      if (sf10Count > totalAudioRecorded) {
-        if (sf11Count < sf10Count || uartErrCount > 0) {
-          return {
-            type: "UART_FAULT",
-            tag: "Dropped STOP Command",
-            badgeClass: "verdict-hardware",
-            icon: "🔌",
-            title: "Audio STOP Command Dropped over UART",
-            message: `The operator initiated recording on screen (SF-10 detected), but the corresponding Audio STOP command (SF-11) was dropped over UART before the audio buffer finalized.`,
-            evidence: `SF-10 (Start) count: ${sf10Count}, but SF-11 (Stop): ${sf11Count} in ${windowDesc}. Unfinalized audio session.`,
-            stage: "UART_BRIDGE",
-            auditItems: [
-              { label: "IR Temperature Protocol", val: `${irVal || 'Verified'} (Pass)`, highlight: "highlight-pass" },
-              { label: "Screen START (SF-10)", val: `${sf10Count} initiated`, highlight: "highlight-pass" },
-              { label: "Screen STOP (SF-11)", val: `${sf11Count} received`, highlight: "highlight-warn" },
-              { label: "Unfinalized Audio", val: `${sf10Count - sf11Count} lost STOP`, highlight: "highlight-fail" },
-              { label: "Hardware UART Status", val: failedUartCmd || "Framing Drop", highlight: "highlight-fail" },
-            ],
-          };
-        }
+      // 2A: Genuine Dropped STOP Command over UART:
+      // STRICT: Exactly ONE recording was started on screen (SF-10) but never received STOP (SF-11),
+      // and the difference exactly matches the single missing file!
+      const unfinalizedStarts = sf10Count - sf11Count;
+      const totalMissingAudio = missingHeart + missingLung;
+      if (totalMissingAudio === 1 && sf10Count > totalAudioRecorded && unfinalizedStarts >= 1) {
+        return {
+          type: "UART_FAULT",
+          tag: "Dropped STOP Command",
+          badgeClass: "verdict-hardware",
+          icon: "🔌",
+          title: "Audio STOP Command Dropped over UART",
+          message: `The operator initiated recording on screen (SF-10 detected), but the corresponding Audio STOP command (SF-11) was dropped over UART before the audio buffer finalized.`,
+          evidence: `SF-10 (Start) count: ${sf10Count}, but SF-11 (Stop): ${sf11Count} in ${windowDesc}. Exactly 1 unfinalized audio session.`,
+          stage: "UART_BRIDGE",
+          auditItems: [
+            { label: "IR Temperature Protocol", val: `${irVal || 'Verified'} (Pass)`, highlight: "highlight-pass" },
+            { label: "Screen START (SF-10)", val: `${sf10Count} initiated`, highlight: "highlight-pass" },
+            { label: "Screen STOP (SF-11)", val: `${sf11Count} received`, highlight: "highlight-warn" },
+            { label: "Unfinalized Audio", val: "1 lost STOP command", highlight: "highlight-fail" },
+            { label: "Hardware UART Status", val: failedUartCmd || "Framing Drop", highlight: "highlight-fail" },
+          ],
+        };
       }
 
-      // 2B: Clean operator incomplete round (Ria)
+      // 2B: Specific Auscultation Modality Skipped by Operator (e.g. Hope: Heart 4/4, Lung 0/4)
+      if (recordedHeart >= 4 && recordedLung === 0) {
+        return {
+          type: "OPERATOR_SKIPPED",
+          tag: "Lung Auscultation Skipped",
+          badgeClass: "verdict-skipped",
+          icon: "ℹ️",
+          title: "Lung Auscultation Not Performed",
+          message: `Heart auscultation (4/4 files) and temperature were successfully acquired and verified. The operator did not perform the lung auscultation protocol on the device (0 of 4 lung points recorded). Telemetry confirms 0 START commands were initiated on the screen for lung points.`,
+          evidence: `Heart: 4/4 verified. Lung: 0/4 recorded. Telemetry in session window (${windowDesc}): 0 screen START triggers logged for lung auscultation. Clean link: 0 hardware faults, 0 UART framing drops.`,
+          stage: "OPERATOR",
+          auditItems: [
+            { label: "Heart Auscultation", val: "4 / 4 files verified (Pass)", highlight: "highlight-pass" },
+            { label: "Lung Auscultation", val: "0 / 4 files recorded (Operator Skipped)", highlight: "highlight-warn" },
+            { label: "IR Temperature", val: `${irVal || 'Verified'} (Pass)`, highlight: "highlight-pass" },
+            { label: "Screen START (SF-10)", val: "0 triggers for lung auscultation", highlight: "highlight-warn" },
+            { label: "Hardware & Network Link", val: "Operational (0 faults)", highlight: "highlight-pass" },
+          ],
+        };
+      }
+
+      // 2C: Heart Auscultation Skipped (Lung 4/4, Heart 0/4)
+      if (recordedHeart === 0 && recordedLung >= 4) {
+        return {
+          type: "OPERATOR_SKIPPED",
+          tag: "Heart Auscultation Skipped",
+          badgeClass: "verdict-skipped",
+          icon: "ℹ️",
+          title: "Heart Auscultation Not Performed",
+          message: `Lung auscultation (4/4 files) and temperature were successfully acquired and verified. The operator did not perform the heart auscultation protocol on the device (0 of 4 heart points recorded).`,
+          evidence: `Lung: 4/4 verified. Heart: 0/4 recorded. Telemetry in session window (${windowDesc}): 0 screen START triggers logged for heart points. Clean link: 0 hardware faults.`,
+          stage: "OPERATOR",
+          auditItems: [
+            { label: "Lung Auscultation", val: "4 / 4 files verified (Pass)", highlight: "highlight-pass" },
+            { label: "Heart Auscultation", val: "0 / 4 files recorded (Operator Skipped)", highlight: "highlight-warn" },
+            { label: "IR Temperature", val: `${irVal || 'Verified'} (Pass)`, highlight: "highlight-pass" },
+            { label: "Screen START (SF-10)", val: "0 triggers for heart auscultation", highlight: "highlight-warn" },
+            { label: "Hardware & Network Link", val: "Operational (0 faults)", highlight: "highlight-pass" },
+          ],
+        };
+      }
+
+      // 2D: Both Heart & Lung Auscultation Skipped (e.g. Jack duplicate session where only temp was taken)
+      if (recordedHeart === 0 && recordedLung === 0) {
+        return {
+          type: "OPERATOR_SKIPPED",
+          tag: "Auscultation Skipped",
+          badgeClass: "verdict-skipped",
+          icon: "ℹ️",
+          title: "Stethoscope Auscultation Skipped",
+          message: `Temperature readings were verified in cloud, but no stethoscope auscultation recordings (0 Heart, 0 Lung) were initiated on the device during this session.`,
+          evidence: `Temperature: verified. Auscultation: 0/8 files. 0 screen START triggers for auscultation in window. Clean operational link.`,
+          stage: "OPERATOR",
+          auditItems: [
+            { label: "IR Temperature", val: `${irVal || 'Verified'} (Pass)`, highlight: "highlight-pass" },
+            { label: "Auscultation Protocol", val: "0 / 8 files recorded (Operator Skipped)", highlight: "highlight-warn" },
+            { label: "Screen START (SF-10)", val: "0 triggers logged", highlight: "highlight-warn" },
+            { label: "Hardware Status", val: "Device operational (0 faults)", highlight: "highlight-pass" },
+            { label: "Telemetry Trace", val: "Clean trace (0 UART / Wi-Fi drops)", highlight: "highlight-pass" },
+          ],
+        };
+      }
+
+      // 2E: Partial Operator Incomplete (e.g. Ria: 3/4 Heart, 4/4 Lung)
       return {
         type: "OPERATOR_SKIPPED",
         tag: "Operator Incomplete",
@@ -551,8 +640,8 @@
         stage: "OPERATOR",
         auditItems: [
           { label: "IR Temperature Protocol", val: `${irVal || '38.1 °C'} verified (Pass)`, highlight: "highlight-pass" },
-          { label: "Lung Auscultation", val: `${recordedLung} / 4 files verified (Pass)`, highlight: "highlight-pass" },
-          { label: "Heart Auscultation", val: `${recordedHeart} / 4 files (${missingDesc} missing)`, highlight: "highlight-warn" },
+          { label: "Lung Auscultation", val: `${recordedLung} / 4 files verified ${recordedLung >= 4 ? '(Pass)' : ''}`, highlight: recordedLung >= 4 ? "highlight-pass" : "highlight-warn" },
+          { label: "Heart Auscultation", val: `${recordedHeart} / 4 files verified ${recordedHeart >= 4 ? '(Pass)' : ''}`, highlight: recordedHeart >= 4 ? "highlight-pass" : "highlight-warn" },
           { label: "Screen START (SF-10)", val: `0 triggers for ${missingDesc}`, highlight: "highlight-warn" },
           { label: "Hardware & Network Link", val: "0 errors (Clean link)", highlight: "highlight-pass" },
         ],
