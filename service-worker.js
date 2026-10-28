@@ -1,25 +1,11 @@
-const CACHE_NAME = "vetinstant-dashboard-v70";
+const CACHE_NAME = "vetinstant-dashboard-v71";
 
 const APP_SHELL_FILES = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./manifest.webmanifest",
   "./assets/logo-vetinstant.png",
 ];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      // Best-effort cache of shell files so missing optional assets don't fail install
-      return Promise.allSettled(
-        APP_SHELL_FILES.map((file) =>
-          cache.add(file).catch((err) => console.warn("[SW] Cache add skipped:", file, err))
-        )
-      );
-    })
-  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -41,6 +27,13 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // CRITICAL: NEVER intercept browser navigation requests (HTML page loads, redirects)!
+  // Bypassing navigation requests allows the browser to natively load index.html over HTTPS,
+  // handle GitHub Pages trailing-slash 301 redirects, and avoid Chromium RequestInit TypeError.
+  if (event.request.mode === "navigate") {
+    return;
+  }
+
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
@@ -51,16 +44,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first with no-store for HTML, JS, CSS so normal reloads ALWAYS fetch latest versions immediately!
+  // Network-first for JS and CSS so updates are loaded immediately
   const isCode =
-    event.request.mode === "navigate" ||
-    url.pathname.endsWith(".html") ||
     url.pathname.endsWith(".js") ||
     url.pathname.endsWith(".css");
 
   if (isCode) {
     event.respondWith(
-      fetch(event.request, { cache: "no-store" })
+      fetch(event.request)
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const clone = networkResponse.clone();
@@ -68,9 +59,7 @@ self.addEventListener("fetch", (event) => {
           }
           return networkResponse;
         })
-        .catch(() =>
-          caches.match(event.request).then((cached) => cached || caches.match("./index.html"))
-        )
+        .catch(() => caches.match(event.request))
     );
     return;
   }
