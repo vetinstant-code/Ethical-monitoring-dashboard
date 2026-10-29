@@ -3,7 +3,7 @@
  * Device ID is just the default shown on load; users can switch at login.
  */
 window.API_CONFIG = {
-  baseUrl: "https://compounds-moderators-ingredients-cheque.trycloudflare.com",
+  baseUrl: "https://wick-vehicular-dingy.ngrok-free.dev",
   deviceId: "ARMY",
   allowedDevices: ["ARMY", "BRUNO", "ARCHIT", "ZARA", "ROCKY"],
   password: "army",

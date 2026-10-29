@@ -5,8 +5,6 @@ package-lock.json
 .DS_Store
 Thumbs.db
 *.log
-*.exe
-cloudflared*
 
 # Optional: uncomment to keep password out of git
 # config.api.js
