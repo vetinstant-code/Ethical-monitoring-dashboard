@@ -1415,10 +1415,46 @@
         }
       });
 
-      const recentCases = Array.from(caseMap.values()).sort((a, b) => {
+      // Deduplicate cases by canonical animal identity so each physical animal appears exactly once
+      const canonicalCaseMap = new Map();
+      Array.from(caseMap.values()).forEach((c) => {
+        const cleanName = String(c.name || "").trim().toLowerCase();
+        const pKey = cleanName || String(c.id || "").trim().toLowerCase();
+        if (!pKey) return;
+        if (!canonicalCaseMap.has(pKey)) {
+          canonicalCaseMap.set(pKey, c);
+        } else {
+          const cur = canonicalCaseMap.get(pKey);
+          // Prioritize completed records
+          if (c.statusLabel === "Completed" && cur.statusLabel !== "Completed") {
+            canonicalCaseMap.set(pKey, c);
+          } else if (cur.statusLabel === "Completed" && c.statusLabel !== "Completed") {
+            // keep existing completed record
+          } else if (c.statusInfo?.checklist && !cur.statusInfo?.checklist) {
+            canonicalCaseMap.set(pKey, c);
+          } else if (!c.statusInfo?.checklist && cur.statusInfo?.checklist) {
+            // keep existing record with checklist
+          } else if ((c.timestamp || 0) > (cur.timestamp || 0)) {
+            canonicalCaseMap.set(pKey, c);
+          }
+        }
+      });
+
+      const canonicalCases = Array.from(canonicalCaseMap.values()).sort((a, b) => {
         if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
         return (a.name || "").localeCompare(b.name || "");
       });
+
+      // Deduplicated unique physical animals count
+      const canonicalTotalToday = canonicalCases.length || totalToday;
+
+      // Status counts strictly derived from deduplicated canonical animals
+      const canonicalStatusCounts = {
+        completed: canonicalCases.filter((c) => c.statusLabel === "Completed").length,
+        inProgress: canonicalCases.filter((c) => c.statusLabel === "In Progress").length,
+        failed: canonicalCases.filter((c) => c.statusLabel === "Incomplete").length,
+        totalIncomplete: canonicalCases.filter((c) => c.statusLabel !== "Completed").length,
+      };
 
       const hourly = Object.keys(hourlyMap)
         .map((h) => ({ label: `${String(h).padStart(2, "0")}:00`, count: hourlyMap[h] }))
@@ -1445,7 +1481,7 @@
       const totalToday = Math.max(allTodayPetIds.size, dailyPetsList.length);
 
       const elVitals = document.getElementById("kpi-vitals-today");
-      if (elVitals) elVitals.textContent = String(totalToday);
+      if (elVitals) elVitals.textContent = String(canonicalTotalToday);
 
       const tableBody = document.getElementById("activity-table-body");
       if (tableBody) {
@@ -1485,14 +1521,14 @@
 
       const finalPayload = {
         dateLabel: istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`)),
-        totalToday,
+        totalToday: canonicalTotalToday,
         yesterdayCount,
         speciesCounts,
         testCounts,
         hourly,
-        statusCounts,
+        statusCounts: canonicalStatusCounts,
         completedAllTime: store.pets.length,
-        cases: recentCases,
+        cases: canonicalCases,
         comparisons: dashboardComparisons,
         notes,
       };
@@ -1510,13 +1546,13 @@
       hideProgress();
       store.error = null;
 
-      if (!fetchAudio && recentCases.length) {
-        enrichAudioCounts(client, recentCases, testCounts, gen, targetDate).catch(() => {});
+      if (!fetchAudio && canonicalCases.length) {
+        enrichAudioCounts(client, canonicalCases, testCounts, gen, targetDate).catch(() => {});
       }
 
       // Kick off background diagnostic investigation for any incomplete cases
-      if (recentCases.length) {
-        global.VetDiagInvestigator?.enqueueCases?.(recentCases, targetDate, activeDeviceId);
+      if (canonicalCases.length) {
+        global.VetDiagInvestigator?.enqueueCases?.(canonicalCases, targetDate, activeDeviceId);
       }
     } catch (err) {
       console.error("[Live API Sync Failed]", err);

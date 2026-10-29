@@ -382,29 +382,32 @@
     const distColors = distLabels.map((l) => speciesStyle(l).color);
     renderDonut("cv-distribution-chart", distLabels, distValues, distColors);
 
+    const success = statusCounts?.completed || 0;
+    const inProgress = statusCounts?.inProgress || 0;
+    const incompleteOnly = statusCounts?.failed || 0;
+    const totalIncomplete = statusCounts?.totalIncomplete ?? (incompleteOnly + inProgress);
+    const tested = totalToday || (success + totalIncomplete);
+    const rate =
+      tested > 0 ? Math.min(100, Math.max(0, (success / tested) * 100)).toFixed(1) : "0.0";
+
     renderDonut(
       "cv-status-chart",
       ["Completed", "In Progress", "Incomplete"],
       [
-        statusCounts?.completed || 0,
-        statusCounts?.inProgress || 0,
-        statusCounts?.failed || 0,
+        success,
+        inProgress,
+        incompleteOnly,
       ],
       ["#22c55e", "#f59e0b", "#ef4444"]
     );
 
-    const success = statusCounts?.completed || 0;
-    const failed = statusCounts?.failed || 0;
-    const tested = totalToday || 0;
-    const rate =
-      tested > 0 ? ((success / tested) * 100).toFixed(1) : "0.0";
     const elTested = document.getElementById("cv-sum-tested");
     const elSuccess = document.getElementById("cv-sum-success");
     const elFailed = document.getElementById("cv-sum-failed");
     const elRate = document.getElementById("cv-sum-rate");
     if (elTested) elTested.textContent = String(tested);
     if (elSuccess) elSuccess.textContent = String(success);
-    if (elFailed) elFailed.textContent = String(failed);
+    if (elFailed) elFailed.textContent = String(totalIncomplete);
     if (elRate) elRate.textContent = `${rate}%`;
 
     renderRecentCases(cases);
