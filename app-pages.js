@@ -306,11 +306,12 @@
       return;
     }
 
-    // Deduplicate cases by canonical animal name (or ID if unnamed) so each physical animal appears once
+    // Deduplicate cases by canonical animal UUID (or name if missing) so each physical animal appears once
     const caseMapByPet = new Map();
     cases.forEach((c) => {
+      const petId = String(c.id || c.pet_id || "").trim().toLowerCase();
       const cleanName = String(c.name || "").trim().toLowerCase();
-      const pKey = cleanName || String(c.id || "").trim().toLowerCase();
+      const pKey = petId || cleanName;
       if (!pKey) return;
       if (!caseMapByPet.has(pKey)) {
         caseMapByPet.set(pKey, c);

@@ -1315,13 +1315,15 @@
       // Helper to generate a canonical, composite identity key for any animal
       function petKeyOf(item) {
         if (!item) return "";
+        const id = String(item.id || item.pet_id || "").trim().toLowerCase();
+        if (id) return id;
         const name = String(item.name || item.pet_name || "").trim().toLowerCase();
         const disp = String(
           item.displayId || item.regt_no || item.id_number || item.regt || ""
         ).trim().toLowerCase();
         if (name && disp && disp !== "—") return `${name}__${disp}`;
         if (name) return name;
-        return String(item.id || item.pet_id || "").trim().toLowerCase();
+        return "";
       }
 
       // Recent Cases: Deduplicate strictly by Animal identity so each tested animal appears exactly once
@@ -1382,15 +1384,12 @@
 
       // 3. Add scheduled daily pets awaiting measurements (skip if pet already tested or present in caseMap)
       dailyPetsList.forEach((p) => {
-        const petId = String(p.pet_id || p.id);
+        const petId = String(p.pet_id || p.id).trim().toLowerCase();
         const pKey = petKeyOf(p);
-        const cleanName = String(p.name || p.pet_name || "").trim().toLowerCase();
         const alreadyExists =
           caseMap.has(pKey) ||
           Array.from(caseMap.values()).some(
-            (c) =>
-              String(c.id) === petId ||
-              (cleanName && String(c.name || "").trim().toLowerCase() === cleanName)
+            (c) => String(c.id || c.pet_id || "").trim().toLowerCase() === petId
           );
 
         if (!alreadyExists) {
@@ -1415,11 +1414,12 @@
         }
       });
 
-      // Deduplicate cases by canonical animal identity so each physical animal appears exactly once
+      // Deduplicate cases by canonical animal identity (UUID first) so each physical animal appears exactly once
       const canonicalCaseMap = new Map();
       Array.from(caseMap.values()).forEach((c) => {
+        const petId = String(c.id || c.pet_id || "").trim().toLowerCase();
         const cleanName = String(c.name || "").trim().toLowerCase();
-        const pKey = cleanName || String(c.id || "").trim().toLowerCase();
+        const pKey = petId || cleanName;
         if (!pKey) return;
         if (!canonicalCaseMap.has(pKey)) {
           canonicalCaseMap.set(pKey, c);
