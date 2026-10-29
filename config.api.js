@@ -3,7 +3,7 @@
  * Device ID is just the default shown on load; users can switch at login.
  */
 window.API_CONFIG = {
-  baseUrl: "https://unwary-pureness-garage.ngrok-free.dev",
+  baseUrl: "https://vetinstant-dashboard.duckdns.org",
   deviceId: "ARMY",
   allowedDevices: ["ARMY", "BRUNO", "ARCHIT", "ZARA", "ROCKY"],
   password: "army",

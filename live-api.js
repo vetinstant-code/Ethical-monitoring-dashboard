@@ -582,7 +582,7 @@
     }
 
     const cfg = {
-      baseUrl: global.API_CONFIG?.baseUrl || "https://unwary-pureness-garage.ngrok-free.dev",
+      baseUrl: global.API_CONFIG?.baseUrl || "https://vetinstant-dashboard.duckdns.org",
       deviceId: wantedDeviceId,
       sessionToken: session.sessionToken,
       timeoutMs: global.API_CONFIG?.timeoutMs || 25000,
