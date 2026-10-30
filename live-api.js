@@ -800,9 +800,11 @@
           if (tests.has("Heart Sound")) local.testCounts.heart += 1;
           if (tests.has("Lung Sound")) local.testCounts.lung += 1;
 
-          // Find reference temperature & examD for protocol check
+          // Find reference temperature & examD for protocol check (strictly by session ID to prevent cross-session leakage)
           const matchingComp = local.comparisons.find(
-            (c) => String(c.sessionId).trim() === String(sid).trim() || String(c.id) === String(petId)
+            (c) =>
+              (c.sessionId && sid && String(c.sessionId).trim() === String(sid).trim()) ||
+              (!c.sessionId && !sid && String(c.id) === String(petId))
           );
           const irTemp = tempVal ?? matchingComp?.examD ?? (irSummary?.mean ?? irSummary?.max);
           const refTemp = matchingComp?.reference ?? refFromSummary(rectSummary || irSummary);
@@ -884,8 +886,8 @@
         const mean = row.incomplete ? null : row.metrics?.mean;
         const existingIdx = local.cases.findIndex(
           (c) =>
-            (c.sessionId && c.sessionId === String(row.sessionId).trim()) ||
-            String(c.id) === String(row.id)
+            (c.sessionId && row.sessionId && String(c.sessionId).trim() === String(row.sessionId).trim()) ||
+            (!c.sessionId && !row.sessionId && String(c.id) === String(row.id))
         );
         const existingCase = existingIdx >= 0 ? local.cases[existingIdx] : null;
         const testsDesc = existingCase?.tests || "Temperature";
