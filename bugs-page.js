@@ -99,16 +99,14 @@
     try {
       const client = await ensureClient();
 
-      // Fetch all media documents (up to 500)
-      const mediaResp = await client.listMedia({ limit: 500 }).catch(() => ({ documents: [] }));
+      // Fetch only media documents uploaded with category=bug_report
+      const mediaResp = await client.listMedia({ category: "bug_report", limit: 500 }).catch(() => ({ documents: [] }));
       const docs = Array.isArray(mediaResp?.documents) ? mediaResp.documents : [];
 
-      // Filter only documents that represent bug reports or clinical issue descriptions
+      // Filter strictly for category === "bug_report"
       const bugDocs = docs.filter(doc => {
         const cat = String(doc.category || "").toLowerCase();
-        const notes = String(doc.notes || "").trim();
-        const title = String(doc.title || "").toLowerCase();
-        return cat === "bug_report" || notes.length > 0 || title.includes("bug") || title.includes("error");
+        return cat === "bug_report";
       });
 
       // Sort newest first
