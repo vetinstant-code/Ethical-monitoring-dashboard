@@ -19,7 +19,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=75" />
+  <link rel="stylesheet" href="styles.css?v=78" />
   <script>
     // Self-healing: if an older service worker is stuck, force update it
     if ("serviceWorker" in navigator) {
@@ -180,6 +180,20 @@
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
               <span>Reports</span>
+            </a>
+          </li>
+          <li class="nav-item" data-nav="bugs">
+            <a href="#/bugs" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a4 4 0 0 0-4 4v1H6a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h1v2a5 5 0 0 0 5 5 5 5 0 0 0 5-5v-2h1a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"></path>
+                <line x1="6" y1="13" x2="2" y2="13"></line>
+                <line x1="22" y1="13" x2="18" y2="13"></line>
+                <line x1="7" y1="6" x2="3" y2="3"></line>
+                <line x1="17" y1="6" x2="21" y2="3"></line>
+                <line x1="7" y1="17" x2="3" y2="20"></line>
+                <line x1="17" y1="17" x2="21" y2="20"></line>
+              </svg>
+              <span>Bug Reports</span>
             </a>
           </li>
           <!-- Settings — hidden until feature is ready -->
@@ -780,6 +794,73 @@
         </section>
       </div>
 
+      <!-- VIEW: BUG REPORTS -->
+      <div id="view-bugs" class="app-view" hidden>
+        <section class="bugs-page">
+          <!-- Page Toolbar -->
+          <div class="bugs-toolbar">
+            <div class="bugs-toolbar-title">
+              <h2>Bug Reports & Clinical Issues</h2>
+              <p>Forensic issue tracking, doctor observation notes, and upload failure photo/video proofs</p>
+            </div>
+            <div class="bugs-toolbar-actions">
+              <button type="button" class="btn-refresh-bugs" id="bugs-refresh-btn" title="Refresh bug reports">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+              <button type="button" class="btn-add-bug" id="bugs-new-report-btn">
+                <span>+ Report Issue / Note</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI Summary Strip -->
+          <div class="bugs-kpi-grid">
+            <div class="bugs-kpi-card" id="bugs-kpi-tested">
+              <span class="bugs-kpi-num" id="bugs-count-tested">—</span>
+              <span class="bugs-kpi-label">Animals Evaluated Today</span>
+            </div>
+            <div class="bugs-kpi-card bugs-kpi-card--warn" id="bugs-kpi-issues">
+              <span class="bugs-kpi-num" id="bugs-count-issues">—</span>
+              <span class="bugs-kpi-label">Issues / Notes Reported</span>
+            </div>
+            <div class="bugs-kpi-card bugs-kpi-card--media" id="bugs-kpi-media">
+              <span class="bugs-kpi-num" id="bugs-count-media">—</span>
+              <span class="bugs-kpi-label">Proof Media Attached</span>
+            </div>
+            <div class="bugs-kpi-card bugs-kpi-card--clean" id="bugs-kpi-clean">
+              <span class="bugs-kpi-num" id="bugs-count-clean">—</span>
+              <span class="bugs-kpi-label">Clean Protocol Passes</span>
+            </div>
+          </div>
+
+          <!-- Filter & Search Toolbar -->
+          <div class="bugs-filter-strip">
+            <div class="bugs-search-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="bugs-search-input" placeholder="Search animal, ID, session, or note text..." />
+            </div>
+            <div class="bugs-filter-tabs">
+              <button type="button" class="bugs-filter-tab is-active" data-tab="all">All Evaluated (<span id="bugs-tab-all-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab" data-tab="with-issues">Has Doctor Notes (<span id="bugs-tab-issues-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab" data-tab="with-media">Has Media Proof (<span id="bugs-tab-media-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab" data-tab="incomplete">Protocol Incomplete (<span id="bugs-tab-incomplete-count">0</span>)</button>
+            </div>
+          </div>
+
+          <!-- Bug cards list container -->
+          <div id="bugs-content-root" class="bugs-content-root">
+            <p class="empty-state">Loading bug reports…</p>
+          </div>
+        </section>
+      </div>
+
     </main>
   </div>
 
@@ -787,25 +868,26 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="config.api.js?v=75"></script>
-  <script src="api-client.js?v=75"></script>
-  <script src="auth.js?v=75"></script>
-  <script src="api-adapter.js?v=75"></script>
-  <script src="app-filters.js?v=75"></script>
-  <script src="excel-generator.js?v=75"></script>
-  <script src="vitals-status-engine.js?v=75"></script>
-  <script src="diag-codebooks.js?v=75"></script>
-  <script src="diag-investigator.js?v=75"></script>
-  <script src="dashboard-home.js?v=75"></script>
-  <script src="live-api.js?v=75"></script>
-  <script src="app-pages.js?v=75"></script>
-  <script src="reports-page.js?v=75"></script>
-  <script src="login-fx.js?v=75"></script>
+  <script src="config.api.js?v=78"></script>
+  <script src="api-client.js?v=78"></script>
+  <script src="auth.js?v=78"></script>
+  <script src="api-adapter.js?v=78"></script>
+  <script src="app-filters.js?v=78"></script>
+  <script src="excel-generator.js?v=78"></script>
+  <script src="vitals-status-engine.js?v=78"></script>
+  <script src="diag-codebooks.js?v=78"></script>
+  <script src="diag-investigator.js?v=78"></script>
+  <script src="dashboard-home.js?v=78"></script>
+  <script src="live-api.js?v=78"></script>
+  <script src="app-pages.js?v=78"></script>
+  <script src="reports-page.js?v=78"></script>
+  <script src="bugs-page.js?v=78"></script>
+  <script src="login-fx.js?v=78"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("./service-worker.js?v=75")
+          .register("./service-worker.js?v=78")
           .then((reg) => {
             // Check for service worker updates immediately on page load
             reg.update();

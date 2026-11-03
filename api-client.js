@@ -390,6 +390,89 @@
         clearTimeout(timer);
       }
     }
+
+    /* ==========================================================================
+     * Bug Reports & Clinical Media APIs
+     * ========================================================================== */
+
+    petBugReports(petId, examSessionId) {
+      const params = {};
+      if (examSessionId) params.exam_session_id = examSessionId;
+      return this._request("GET", `/api/pets/${encodeURIComponent(petId)}/bug-reports`, { params });
+    }
+
+    sessionBugReports(examSessionId) {
+      return this._request("GET", `/api/exam-sessions/${encodeURIComponent(examSessionId)}/bug-reports`);
+    }
+
+    getBugReportNotes(petId, examSessionId) {
+      const params = {};
+      if (examSessionId) params.exam_session_id = examSessionId;
+      return this._request("GET", `/api/pets/${encodeURIComponent(petId)}/bug-reports/notes`, { params });
+    }
+
+    saveBugReportNotes(petId, { examSessionId, notes, description }) {
+      const json = {};
+      if (examSessionId) json.exam_session_id = examSessionId;
+      if (notes != null) json.notes = notes;
+      if (description != null) json.description = description;
+      return this._request("PUT", `/api/pets/${encodeURIComponent(petId)}/bug-reports/notes`, { json });
+    }
+
+    getMediaViewUrl(mediaId) {
+      const token = this._resolveSessionToken();
+      const dev = this.deviceId;
+      return `${this._url(`/api/media/${encodeURIComponent(mediaId)}/view`)}?token=${encodeURIComponent(token)}&dev=${encodeURIComponent(dev)}`;
+    }
+
+    getMediaDownloadUrl(mediaId) {
+      const token = this._resolveSessionToken();
+      const dev = this.deviceId;
+      return `${this._url(`/api/media/${encodeURIComponent(mediaId)}/download`)}?token=${encodeURIComponent(token)}&dev=${encodeURIComponent(dev)}`;
+    }
+
+    getMediaUrlInfo(mediaId) {
+      return this._request("GET", `/api/media/${encodeURIComponent(mediaId)}/url`);
+    }
+
+    deleteMedia(mediaId) {
+      return this._request("DELETE", `/api/media/${encodeURIComponent(mediaId)}`);
+    }
+
+    listMedia({ petId, deviceId, category, limit = 100, offset = 0 } = {}) {
+      const params = { limit, offset };
+      if (petId) params.pet_id = petId;
+      if (deviceId) params.device_id = deviceId;
+      if (category) params.category = category;
+      return this._request("GET", "/api/media/list", { params });
+    }
+
+    presignedUploadUrl({ petId, examSessionId, filename, mimeType, category = "bug_report" }) {
+      const json = {
+        pet_id: petId,
+        exam_session_id: examSessionId,
+        filename: filename,
+        mime_type: mimeType,
+        category: category,
+      };
+      return this._request("POST", "/api/media/presigned-upload-url", { json });
+    }
+
+    confirmMediaUpload({ mediaId, s3Key, petId, examSessionId, originalFilename, mimeType, fileSizeBytes, category = "bug_report", title, notes }) {
+      const json = {
+        media_id: mediaId,
+        s3_key: s3Key,
+        pet_id: petId,
+        exam_session_id: examSessionId,
+        original_filename: originalFilename,
+        mime_type: mimeType,
+        file_size_bytes: fileSizeBytes,
+        category: category,
+        title: title || originalFilename,
+        notes: notes || "",
+      };
+      return this._request("POST", "/api/media/confirm", { json });
+    }
   }
 
   /** Normalize list responses like ui.py does */

@@ -9,6 +9,7 @@
     "vitals-today": "view-vitals-today",
     history: "view-animal-history",
     reports: "view-reports",
+    bugs: "view-bugs",
   };
 
   const istDateFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -50,6 +51,7 @@
       return { name: "vitals-today", petId: null, filter };
     }
     if (parts[0] === "reports") return { name: "reports", petId: null, filter: null };
+    if (parts[0] === "bugs") return { name: "bugs", petId: null, filter: parts[1] || "all" };
     if (parts[0] === "animal" && parts[1]) {
       return { name: "history", petId: decodeURIComponent(parts[1]), filter: null };
     }
@@ -88,7 +90,8 @@
         (name === "animals" && nav === "animals") ||
         (name === "history" && nav === "animals") ||
         (name === "vitals-today" && nav === "vitals-today") ||
-        (name === "reports" && nav === "reports");
+        (name === "reports" && nav === "reports") ||
+        (name === "bugs" && nav === "bugs");
       item.classList.toggle("active", active);
     });
   }
@@ -855,6 +858,15 @@
       document.body.classList.add("reports-mode");
       global.VetDashboardFilters?.showBar?.(false);
       global.VetReportsPage?.onShow?.();
+      return;
+    }
+
+    if (name === "bugs") {
+      showView("bugs");
+      setHeader("Bug Reports & Issues", "Forensic issue tracking, doctor notes, and photo/video proofs.", false);
+      document.body.classList.remove("reports-mode");
+      global.VetDashboardFilters?.showBar?.(true);
+      global.VetBugsPage?.render?.(filter || "all");
       return;
     }
 
