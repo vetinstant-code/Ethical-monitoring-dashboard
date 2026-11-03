@@ -19,7 +19,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=78" />
+  <link rel="stylesheet" href="styles.css?v=79" />
   <script>
     // Self-healing: if an older service worker is stuck, force update it
     if ("serviceWorker" in navigator) {
@@ -800,8 +800,8 @@
           <!-- Page Toolbar -->
           <div class="bugs-toolbar">
             <div class="bugs-toolbar-title">
-              <h2>Bug Reports & Clinical Issues</h2>
-              <p>Forensic issue tracking, doctor observation notes, and upload failure photo/video proofs</p>
+              <h2>Bug Reports & Failure Proofs</h2>
+              <p>Uploaded bug screenshots, hardware failure proofs, and error descriptions</p>
             </div>
             <div class="bugs-toolbar-actions">
               <button type="button" class="btn-refresh-bugs" id="bugs-refresh-btn" title="Refresh bug reports">
@@ -811,29 +811,26 @@
                 </svg>
                 <span>Refresh</span>
               </button>
-              <button type="button" class="btn-add-bug" id="bugs-new-report-btn">
-                <span>+ Report Issue / Note</span>
-              </button>
             </div>
           </div>
 
           <!-- KPI Summary Strip -->
           <div class="bugs-kpi-grid">
-            <div class="bugs-kpi-card" id="bugs-kpi-tested">
-              <span class="bugs-kpi-num" id="bugs-count-tested">—</span>
-              <span class="bugs-kpi-label">Animals Evaluated Today</span>
+            <div class="bugs-kpi-card bugs-kpi-card--warn" id="bugs-kpi-tested">
+              <span class="bugs-kpi-num" id="bugs-count-tested">0</span>
+              <span class="bugs-kpi-label">Bugs Reported Today</span>
             </div>
-            <div class="bugs-kpi-card bugs-kpi-card--warn" id="bugs-kpi-issues">
-              <span class="bugs-kpi-num" id="bugs-count-issues">—</span>
-              <span class="bugs-kpi-label">Issues / Notes Reported</span>
+            <div class="bugs-kpi-card" id="bugs-kpi-issues">
+              <span class="bugs-kpi-num" id="bugs-count-issues">0</span>
+              <span class="bugs-kpi-label">Total Bugs Logged</span>
             </div>
             <div class="bugs-kpi-card bugs-kpi-card--media" id="bugs-kpi-media">
-              <span class="bugs-kpi-num" id="bugs-count-media">—</span>
-              <span class="bugs-kpi-label">Proof Media Attached</span>
+              <span class="bugs-kpi-num" id="bugs-count-media">0</span>
+              <span class="bugs-kpi-label">Media Attachments</span>
             </div>
             <div class="bugs-kpi-card bugs-kpi-card--clean" id="bugs-kpi-clean">
               <span class="bugs-kpi-num" id="bugs-count-clean">—</span>
-              <span class="bugs-kpi-label">Clean Protocol Passes</span>
+              <span class="bugs-kpi-label">Active Date</span>
             </div>
           </div>
 
@@ -844,13 +841,11 @@
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              <input type="text" id="bugs-search-input" placeholder="Search animal, ID, session, or note text..." />
+              <input type="text" id="bugs-search-input" placeholder="Search bug description, note, file name..." />
             </div>
             <div class="bugs-filter-tabs">
-              <button type="button" class="bugs-filter-tab is-active" data-tab="all">All Evaluated (<span id="bugs-tab-all-count">0</span>)</button>
-              <button type="button" class="bugs-filter-tab" data-tab="with-issues">Has Doctor Notes (<span id="bugs-tab-issues-count">0</span>)</button>
-              <button type="button" class="bugs-filter-tab" data-tab="with-media">Has Media Proof (<span id="bugs-tab-media-count">0</span>)</button>
-              <button type="button" class="bugs-filter-tab" data-tab="incomplete">Protocol Incomplete (<span id="bugs-tab-incomplete-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab is-active" data-tab="today">Today's Bugs (<span id="bugs-tab-today-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab" data-tab="all">All Bug Reports (<span id="bugs-tab-all-count">0</span>)</button>
             </div>
           </div>
 
@@ -868,26 +863,26 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="config.api.js?v=78"></script>
-  <script src="api-client.js?v=78"></script>
-  <script src="auth.js?v=78"></script>
-  <script src="api-adapter.js?v=78"></script>
-  <script src="app-filters.js?v=78"></script>
-  <script src="excel-generator.js?v=78"></script>
-  <script src="vitals-status-engine.js?v=78"></script>
-  <script src="diag-codebooks.js?v=78"></script>
-  <script src="diag-investigator.js?v=78"></script>
-  <script src="dashboard-home.js?v=78"></script>
-  <script src="live-api.js?v=78"></script>
-  <script src="app-pages.js?v=78"></script>
-  <script src="reports-page.js?v=78"></script>
-  <script src="bugs-page.js?v=78"></script>
-  <script src="login-fx.js?v=78"></script>
+  <script src="config.api.js?v=79"></script>
+  <script src="api-client.js?v=79"></script>
+  <script src="auth.js?v=79"></script>
+  <script src="api-adapter.js?v=79"></script>
+  <script src="app-filters.js?v=79"></script>
+  <script src="excel-generator.js?v=79"></script>
+  <script src="vitals-status-engine.js?v=79"></script>
+  <script src="diag-codebooks.js?v=79"></script>
+  <script src="diag-investigator.js?v=79"></script>
+  <script src="dashboard-home.js?v=79"></script>
+  <script src="live-api.js?v=79"></script>
+  <script src="app-pages.js?v=79"></script>
+  <script src="reports-page.js?v=79"></script>
+  <script src="bugs-page.js?v=79"></script>
+  <script src="login-fx.js?v=79"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("./service-worker.js?v=78")
+          .register("./service-worker.js?v=79")
           .then((reg) => {
             // Check for service worker updates immediately on page load
             reg.update();

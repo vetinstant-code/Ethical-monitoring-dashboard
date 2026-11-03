@@ -5163,3 +5163,164 @@ body.reports-mode .page-back-btn {
   object-fit: contain;
   border-radius: 6px;
 }
+
+
+/* Specific Card Layout Matching Clinical Proof Uploads */
+.bug-report-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 340px));
+  gap: 20px;
+  align-items: start;
+}
+
+.bug-report-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s ease;
+}
+
+.bug-report-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  border-color: #cbd5e1;
+}
+
+.bug-preview-wrap {
+  position: relative;
+  width: 100%;
+  height: 200px;
+  background: #f8fafc;
+  overflow: hidden;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bug-badge-pill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 5px rgba(220, 38, 38, 0.4);
+  z-index: 2;
+}
+
+.bug-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  transition: transform 0.2s ease;
+}
+
+.bug-preview-img:hover {
+  transform: scale(1.02);
+}
+
+.bug-preview-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.bug-preview-placeholder svg {
+  width: 36px;
+  height: 36px;
+}
+
+.bug-card-details {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bug-report-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.bug-report-meta {
+  font-size: 12px;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.bug-report-desc-box {
+  background: #f8fafc;
+  border-left: 3px solid #0284c7;
+  border-radius: 0 6px 6px 0;
+  padding: 8px 12px;
+  margin-top: 2px;
+}
+
+.bug-report-desc-text {
+  font-size: 13px;
+  color: #1e293b;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  font-weight: 500;
+}
+
+.bug-report-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.btn-bug-action {
+  flex: 1;
+  padding: 7px 0;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.btn-bug-view, .btn-bug-download {
+  background: #ffffff;
+  border: 1px solid #0284c7;
+  color: #0284c7;
+}
+
+.btn-bug-view:hover, .btn-bug-download:hover {
+  background: #f0f9ff;
+  border-color: #0369a1;
+  color: #0369a1;
+}
+
+.btn-bug-delete {
+  background: #ef4444;
+  border: 1px solid #ef4444;
+  color: #ffffff;
+}
+
+.btn-bug-delete:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
