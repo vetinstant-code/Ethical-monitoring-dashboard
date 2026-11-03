@@ -69,6 +69,7 @@
     searchQuery: "",
     isLoading: false,
     date: null,
+    activeDevice: "BRUNO",
     allBugDocs: [],
   };
 
@@ -98,15 +99,23 @@
 
     try {
       const client = await ensureClient();
+      const activeDevice = (global.VetAuth?.getDeviceId?.() || client.deviceId || "BRUNO").trim().toUpperCase();
+      state.activeDevice = activeDevice;
 
-      // Fetch only media documents uploaded with category=bug_report
-      const mediaResp = await client.listMedia({ category: "bug_report", limit: 500 }).catch(() => ({ documents: [] }));
+      // Fetch strictly for current logged-in device and category=bug_report
+      const mediaResp = await client.listMedia({
+        category: "bug_report",
+        deviceId: activeDevice,
+        limit: 500,
+      }).catch(() => ({ documents: [] }));
       const docs = Array.isArray(mediaResp?.documents) ? mediaResp.documents : [];
 
-      // Filter strictly for category === "bug_report"
+      // Filter strictly for category === "bug_report" AND matching active device (case-insensitive)
+      const targetDevLower = activeDevice.toLowerCase();
       const bugDocs = docs.filter(doc => {
         const cat = String(doc.category || "").toLowerCase();
-        return cat === "bug_report";
+        const docDev = String(doc.device_id || "").toLowerCase();
+        return cat === "bug_report" && (!targetDevLower || docDev === targetDevLower);
       });
 
       // Sort newest first
@@ -171,7 +180,9 @@
     if (elToday) elToday.textContent = todayBugs.length;
     if (elAll) elAll.textContent = allBugs.length;
     if (elMedia) elMedia.textContent = allBugs.filter(b => b.mime_type?.startsWith("image/")).length;
-    if (elClean) elClean.textContent = `${formatDisplayDate(targetDate)}`;
+    if (elClean) elClean.textContent = state.activeDevice;
+    const elCleanLabel = elClean?.parentElement?.querySelector(".bugs-kpi-label");
+    if (elCleanLabel) elCleanLabel.textContent = `Active Device (${state.activeDevice})`;
 
     // Tab counts
     const tabTodayCount = document.getElementById("bugs-tab-today-count");
@@ -201,8 +212,8 @@
 
     if (!itemsToDisplay.length) {
       const msg = state.currentTab === "today"
-        ? `No bugs reported for ${formatDisplayDate(targetDate)}. Switch to "All Bug Reports" tab above to view previous reports.`
-        : "No bug reports found.";
+        ? `No bugs reported for device ${state.activeDevice} on ${formatDisplayDate(targetDate)}. Switch to "All Bug Reports" tab above to view previous reports.`
+        : `No bug reports found for device ${state.activeDevice}.`;
       root.innerHTML = `
         <div class="empty-state bugs-empty-state">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="bugs-empty-icon">
