@@ -313,9 +313,6 @@
               <a href="${escapeHtml(downloadUrl)}" download class="btn-media-action btn-media-download" target="_blank">
                 <span>Download</span>
               </a>
-              <button type="button" class="btn-media-action btn-media-delete" data-media-id="${escapeHtml(mediaId)}">
-                <span>Delete</span>
-              </button>
             </div>
           </div>
         </article>`;
@@ -602,7 +599,7 @@
       });
     });
 
-    // Content root event delegation (View, Delete)
+    // Content root event delegation (View)
     const contentRoot = document.getElementById("media-content-root");
     if (contentRoot) {
       contentRoot.addEventListener("click", async (e) => {
@@ -615,30 +612,6 @@
           const isVideo = viewBtn.getAttribute("data-is-video") === "true";
           const isPdf = viewBtn.getAttribute("data-is-pdf") === "true";
           openLightbox(url, title, isVideo, isPdf);
-          return;
-        }
-
-        // Delete button
-        const delBtn = e.target.closest(".btn-media-delete");
-        if (delBtn) {
-          e.stopPropagation();
-          const mediaId = delBtn.getAttribute("data-media-id");
-          if (!mediaId) return;
-          if (!confirm("Are you sure you want to delete this clinical document?")) return;
-
-          delBtn.disabled = true;
-          delBtn.textContent = "Deleting…";
-
-          try {
-            const client = await ensureClient();
-            await client.deleteMedia(mediaId);
-            state.documents = state.documents.filter((d) => d.id !== mediaId);
-            renderUi();
-          } catch (err) {
-            alert(`Failed to delete: ${err.message || err}`);
-            delBtn.disabled = false;
-            delBtn.textContent = "Delete";
-          }
           return;
         }
       });
@@ -664,3 +637,4 @@
     openUploadModal,
   };
 })(window);
+

@@ -291,9 +291,6 @@
               <a href="${escapeHtml(downloadUrl)}" download class="btn-bug-action btn-bug-download" target="_blank">
                 <span>Download</span>
               </a>
-              <button type="button" class="btn-bug-action btn-bug-delete" data-media-id="${escapeHtml(mediaId)}">
-                <span>Delete</span>
-              </button>
             </div>
           </div>
         </article>`;
@@ -361,7 +358,7 @@
       });
     });
 
-    // Content root event delegation (View, Delete)
+    // Content root event delegation (View)
     const contentRoot = document.getElementById("bugs-content-root");
     if (contentRoot) {
       contentRoot.addEventListener("click", async (e) => {
@@ -372,30 +369,6 @@
           const url = viewBtn.getAttribute("data-url");
           const title = viewBtn.getAttribute("data-title");
           openLightbox(url, title);
-          return;
-        }
-
-        // Delete button
-        const delBtn = e.target.closest(".btn-bug-delete");
-        if (delBtn) {
-          e.stopPropagation();
-          const mediaId = delBtn.getAttribute("data-media-id");
-          if (!mediaId) return;
-          if (!confirm("Are you sure you want to delete this bug report?")) return;
-
-          delBtn.disabled = true;
-          delBtn.textContent = "Deleting…";
-
-          try {
-            const client = await ensureClient();
-            await client.deleteMedia(mediaId);
-            state.allBugDocs = state.allBugDocs.filter(d => d.id !== mediaId);
-            renderUi();
-          } catch (err) {
-            alert(`Failed to delete: ${err.message || err}`);
-            delBtn.disabled = false;
-            delBtn.textContent = "Delete";
-          }
           return;
         }
       });
