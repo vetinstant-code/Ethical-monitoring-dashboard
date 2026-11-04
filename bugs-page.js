@@ -125,6 +125,11 @@
         return tb - ta;
       });
 
+      // Resolve session names (e.g. Session 1, Session 2) via Excel generator logic
+      if (global.VetApiAdapter?.resolveSessionLabelsForItems) {
+        await global.VetApiAdapter.resolveSessionLabelsForItems(bugDocs, client);
+      }
+
       state.allBugDocs = bugDocs;
       state.isLoading = false;
       renderUi();
@@ -203,7 +208,8 @@
         const species = String(item.species || "").toLowerCase();
         const device = String(item.device_id || "").toLowerCase();
         const sid = String(item.session_id || "").toLowerCase();
-        return title.includes(query) || notes.includes(query) || pet.includes(query) || species.includes(query) || device.includes(query) || sid.includes(query);
+        const sLabel = String(global.VetApiAdapter?.formatSessionLabel?.(item.session_id, item.pet_id) || "").toLowerCase();
+        return title.includes(query) || notes.includes(query) || pet.includes(query) || species.includes(query) || device.includes(query) || sid.includes(query) || sLabel.includes(query);
       });
     }
 
@@ -240,7 +246,7 @@
       const species = item.species || "";
       const deviceId = item.device_id || "BRUNO";
       const dateStr = item.visit_date || (item.uploaded_at ? item.uploaded_at.slice(0, 10) : "");
-      const sessionStr = item.session_id ? `Session: ${item.session_id.slice(0, 8)}…` : "";
+      const sessionLabel = global.VetApiAdapter?.formatSessionLabel?.(item.session_id, item.pet_id) || (item.session_id ? `Session (${item.session_id.slice(0, 8)})` : "");
       const sizeStr = item.file_size_bytes ? formatBytes(item.file_size_bytes) : (item.file_size_mb ? `${item.file_size_mb} MB` : "");
 
       // Media URLs
@@ -272,7 +278,7 @@
             <h4 class="bug-report-title">${escapeHtml(title)}</h4>
             <div class="bug-report-meta">
               <span>Date: ${escapeHtml(dateStr)}</span>
-              ${sessionStr ? `<span>• ${escapeHtml(sessionStr)}</span>` : ""}
+              ${sessionLabel ? `<span title="ID: ${escapeHtml(item.session_id)}">• ${escapeHtml(sessionLabel)}</span>` : ""}
               ${sizeStr ? `<span>• ${escapeHtml(sizeStr)}</span>` : ""}
               <span>• Device: ${escapeHtml(deviceId)}</span>
               ${petName !== "Animal" ? `<span>• Pet: ${escapeHtml(petName)} (${escapeHtml(species)})</span>` : ""}

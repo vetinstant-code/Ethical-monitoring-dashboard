@@ -115,6 +115,11 @@
         return tb - ta;
       });
 
+      // Resolve session names (e.g. Session 1, Session 2) via Excel generator logic
+      if (global.VetApiAdapter?.resolveSessionLabelsForItems) {
+        await global.VetApiAdapter.resolveSessionLabelsForItems(clinicalDocs, client);
+      }
+
       state.documents = clinicalDocs;
       state.isLoading = false;
       renderUi();
@@ -210,7 +215,8 @@
         const species = String(d.species || "").toLowerCase();
         const sid = String(d.session_id || "").toLowerCase();
         const cat = String(d.category || "").toLowerCase();
-        return title.includes(query) || notes.includes(query) || pet.includes(query) || species.includes(query) || sid.includes(query) || cat.includes(query);
+        const sLabel = String(global.VetApiAdapter?.formatSessionLabel?.(d.session_id, d.pet_id) || "").toLowerCase();
+        return title.includes(query) || notes.includes(query) || pet.includes(query) || species.includes(query) || sid.includes(query) || cat.includes(query) || sLabel.includes(query);
       });
     }
 
@@ -247,7 +253,7 @@
       const species = item.species || "";
       const deviceId = item.device_id || state.activeDevice;
       const dateStr = item.visit_date || (item.uploaded_at ? item.uploaded_at.slice(0, 10) : "");
-      const sessionStr = item.session_id ? `Session: ${item.session_id.slice(0, 8)}…` : "";
+      const sessionLabel = global.VetApiAdapter?.formatSessionLabel?.(item.session_id, item.pet_id) || (item.session_id ? `Session (${item.session_id.slice(0, 8)})` : "");
       const sizeStr = item.file_size_bytes ? formatBytes(item.file_size_bytes) : (item.file_size_mb ? `${item.file_size_mb} MB` : "");
 
       // URLs
@@ -294,7 +300,7 @@
             <h4 class="clinical-media-title" title="${escapeHtml(title)}">${escapeHtml(title)}</h4>
             <div class="clinical-media-meta">
               <span>Date: ${escapeHtml(dateStr)}</span>
-              ${sessionStr ? `<span>• ${escapeHtml(sessionStr)}</span>` : ""}
+              ${sessionLabel ? `<span title="ID: ${escapeHtml(item.session_id)}">• ${escapeHtml(sessionLabel)}</span>` : ""}
               ${sizeStr ? `<span>• ${escapeHtml(sizeStr)}</span>` : ""}
               <span>• Device: ${escapeHtml(deviceId)}</span>
               ${petName !== "Animal" ? `<span>• Pet: <strong>${escapeHtml(petName)}</strong> (${escapeHtml(species)})</span>` : ""}
@@ -408,8 +414,10 @@
             </select>
           </div>
           <div class="bug-form-group">
-            <label>Exam Session ID (Optional):</label>
-            <input type="text" class="form-field-input" id="upload-doc-session" placeholder="Auto-generated or leave blank" />
+            <label>Exam Session:</label>
+            <select id="upload-doc-session" class="form-field-input">
+              <option value="">General (No specific session)</option>
+            </select>
           </div>
           <div class="bug-form-group">
             <label>Select Document / File:</label>
@@ -467,6 +475,38 @@
     const submitBtn = overlay.querySelector("#upload-doc-submit-btn");
     const progressWrap = overlay.querySelector("#upload-doc-progress-wrap");
     const progressFill = overlay.querySelector("#upload-doc-progress-fill");
+
+    async function updatePetSessions() {
+      const petId = petSelect.value.trim();
+      sessInput.innerHTML = `<option value="">General (No specific session)</option>`;
+      if (!petId) return;
+
+      try {
+        const client = await ensureClient();
+        const resp = await client.examSessions(petId);
+        const rawList = Array.isArray(resp) ? resp : resp?.exam_sessions || resp?.sessions || [];
+        const mapping = global.VetApiAdapter?.sortAndIndexSessions?.(rawList) || {};
+
+        rawList.forEach((s) => {
+          const sid = String(s.id || s.exam_session_id || "").trim();
+          if (!sid) return;
+          const label = mapping[sid] || `Session (${sid.slice(0, 8)})`;
+          const dt = s.started_at || s.created_at;
+          const timeStr = dt ? new Date(dt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+          const opt = document.createElement("option");
+          opt.value = sid;
+          opt.textContent = `${label}${timeStr ? ` (${timeStr})` : ""}`;
+          sessInput.appendChild(opt);
+        });
+      } catch (e) {
+        console.warn("Failed to load sessions for dropdown:", e);
+      }
+    }
+
+    petSelect.addEventListener("change", updatePetSessions);
+    if (petSelect.value) {
+      updatePetSessions();
+    }
 
     fileInput.addEventListener("change", () => {
       const file = fileInput.files[0];

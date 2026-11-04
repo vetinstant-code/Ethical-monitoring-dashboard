@@ -681,6 +681,7 @@
 
       const sessionsResponse = await client.examSessions(petId);
       const sessions = global.VetApiNormalize.normalizeSessions(sessionsResponse);
+      const sessionLabelMap = global.VetApiAdapter?.sortAndIndexSessions?.(sessions) || {};
       const petSummaryResp = await client.petTemperatureSummary(petId).catch(() => null);
       const summaries = Array.isArray(petSummaryResp) ? petSummaryResp : petSummaryResp?.summaries || petSummaryResp?.temperature_summaries || petSummaryResp?.data || petSummaryResp?.results || [];
       const summaryList = Array.isArray(summaries) ? summaries.filter((x) => x && typeof x === "object") : [];
@@ -708,9 +709,11 @@
 
         const refs = best ? summaryTriple(best, "ref") : [0, 0, 0];
         const refMax = Math.max(...refs);
+        const sessionLabel = sessionLabelMap[sid] || global.VetApiAdapter?.formatSessionLabel?.(sid, petId) || (sid ? `Session (${sid.slice(0, 8)})` : "—");
 
         cards.push({
           sid,
+          sessionLabel,
           whenSort: recorded?.getTime?.() || started?.getTime?.() || 0,
           whenLabel,
           recordedLabel: recorded ? istDateTimeFormatter.format(recorded) : "—",
@@ -740,8 +743,10 @@
         const st = statusFromTemp(displayTemp, species);
         const refs = best ? summaryTriple(best, "ref") : [0, 0, 0];
         const refMax = Math.max(...refs);
+        const sessionLabel = sessionLabelMap[sid] || global.VetApiAdapter?.formatSessionLabel?.(sid, petId) || (sid ? `Session (${sid.slice(0, 8)})` : "—");
         cards.push({
           sid,
+          sessionLabel,
           whenSort: recorded?.getTime?.() || 0,
           whenLabel: "—",
           recordedLabel: recorded ? istDateTimeFormatter.format(recorded) : "—",
@@ -804,7 +809,7 @@
                   <td class="vitals-text-bold">${row.refMax > 0 ? `${row.refMax.toFixed(2)}°C` : "—"}</td>
                   <td>${escapeHtml(stats)}</td>
                   <td class="animal-id-sub">${escapeHtml(note)}</td>
-                  <td class="animal-id-sub">${escapeHtml(String(row.sid).slice(0, 12))}</td>
+                  <td class="animal-id-sub"><strong title="Session ID: ${escapeHtml(row.sid)}">${escapeHtml(row.sessionLabel)}</strong></td>
                   <td>${badgeHtml}</td>
                 </tr>`;
                 })
