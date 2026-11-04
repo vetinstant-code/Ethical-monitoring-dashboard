@@ -19,7 +19,7 @@
     rel="stylesheet"
   />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=81" />
+  <link rel="stylesheet" href="styles.css?v=82" />
   <script>
     // Self-healing: if an older service worker is stuck, force update it
     if ("serviceWorker" in navigator) {
@@ -194,6 +194,18 @@
                 <line x1="17" y1="17" x2="21" y2="20"></line>
               </svg>
               <span>Bug Reports</span>
+            </a>
+          </li>
+          <li class="nav-item" data-nav="media">
+            <a href="#/media" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+                <circle cx="7" cy="8" r="1.5"></circle>
+                <polyline points="16 7 11 12 8 9 3 14"></polyline>
+              </svg>
+              <span>Clinical Media</span>
             </a>
           </li>
           <!-- Settings — hidden until feature is ready -->
@@ -856,6 +868,78 @@
         </section>
       </div>
 
+      <!-- VIEW: CLINICAL MEDIA & DOCUMENTS -->
+      <div id="view-media" class="app-view" hidden>
+        <section class="media-page">
+          <!-- Page Toolbar -->
+          <div class="media-toolbar">
+            <div class="media-toolbar-title">
+              <h2>Clinical Media & Documents</h2>
+              <p>Case sheets, echocardiograms, medical photography, and video records</p>
+            </div>
+            <div class="media-toolbar-actions">
+              <button type="button" class="btn-refresh-media" id="media-refresh-btn" title="Refresh clinical media">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Refresh</span>
+              </button>
+              <button type="button" class="btn-upload-media" id="media-upload-btn">
+                <span>+ Upload Document / Media</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI Summary Strip -->
+          <div class="media-kpi-grid">
+            <div class="media-kpi-card" id="media-kpi-casesheet">
+              <span class="media-kpi-num" id="media-count-casesheet">0</span>
+              <span class="media-kpi-label">Case Sheets</span>
+            </div>
+            <div class="media-kpi-card media-kpi-card--echo" id="media-kpi-echo">
+              <span class="media-kpi-num" id="media-count-echo">0</span>
+              <span class="media-kpi-label">Echo / Ultrasound</span>
+            </div>
+            <div class="media-kpi-card media-kpi-card--image" id="media-kpi-image">
+              <span class="media-kpi-num" id="media-count-image">0</span>
+              <span class="media-kpi-label">Medical Photos</span>
+            </div>
+            <div class="media-kpi-card media-kpi-card--video" id="media-kpi-video">
+              <span class="media-kpi-num" id="media-count-video">0</span>
+              <span class="media-kpi-label">Clinical Videos</span>
+            </div>
+            <div class="media-kpi-card media-kpi-card--storage" id="media-kpi-storage">
+              <span class="media-kpi-num" id="media-count-storage">0 MB</span>
+              <span class="media-kpi-label">Total Storage</span>
+            </div>
+          </div>
+
+          <!-- Filter & Search Toolbar -->
+          <div class="media-filter-strip">
+            <div class="media-search-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="media-search-input" placeholder="Search pet, title, notes, session ID, filename..." />
+            </div>
+            <div class="media-filter-tabs">
+              <button type="button" class="media-filter-tab is-active" data-tab="all">All Documents (<span id="media-tab-all-count">0</span>)</button>
+              <button type="button" class="media-filter-tab" data-tab="case_sheet">Case Sheets (<span id="media-tab-case_sheet-count">0</span>)</button>
+              <button type="button" class="media-filter-tab" data-tab="echo">Echo (<span id="media-tab-echo-count">0</span>)</button>
+              <button type="button" class="media-filter-tab" data-tab="image">Photos (<span id="media-tab-image-count">0</span>)</button>
+              <button type="button" class="media-filter-tab" data-tab="video">Videos (<span id="media-tab-video-count">0</span>)</button>
+            </div>
+          </div>
+
+          <!-- Media cards grid container -->
+          <div id="media-content-root" class="media-content-root">
+            <p class="empty-state">Loading clinical media…</p>
+          </div>
+        </section>
+      </div>
+
     </main>
   </div>
 
@@ -875,14 +959,15 @@
   <script src="dashboard-home.js?v=81"></script>
   <script src="live-api.js?v=81"></script>
   <script src="app-pages.js?v=81"></script>
-  <script src="reports-page.js?v=81"></script>
-  <script src="bugs-page.js?v=81"></script>
-  <script src="login-fx.js?v=81"></script>
+  <script src="reports-page.js?v=82"></script>
+  <script src="bugs-page.js?v=82"></script>
+  <script src="media-page.js?v=82"></script>
+  <script src="login-fx.js?v=82"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("./service-worker.js?v=81")
+          .register("./service-worker.js?v=82")
           .then((reg) => {
             // Check for service worker updates immediately on page load
             reg.update();

@@ -10,6 +10,7 @@
     history: "view-animal-history",
     reports: "view-reports",
     bugs: "view-bugs",
+    media: "view-media",
   };
 
   const istDateFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -52,6 +53,7 @@
     }
     if (parts[0] === "reports") return { name: "reports", petId: null, filter: null };
     if (parts[0] === "bugs") return { name: "bugs", petId: null, filter: parts[1] || "all" };
+    if (parts[0] === "media") return { name: "media", petId: null, filter: parts[1] || "all" };
     if (parts[0] === "animal" && parts[1]) {
       return { name: "history", petId: decodeURIComponent(parts[1]), filter: null };
     }
@@ -91,7 +93,8 @@
         (name === "history" && nav === "animals") ||
         (name === "vitals-today" && nav === "vitals-today") ||
         (name === "reports" && nav === "reports") ||
-        (name === "bugs" && nav === "bugs");
+        (name === "bugs" && nav === "bugs") ||
+        (name === "media" && nav === "media");
       item.classList.toggle("active", active);
     });
   }
@@ -866,7 +869,16 @@
       setHeader("Bug Reports & Issues", "Forensic issue tracking, doctor notes, and photo/video proofs.", false);
       document.body.classList.remove("reports-mode");
       global.VetDashboardFilters?.showBar?.(true);
-      global.VetBugsPage?.render?.(filter || "all");
+      global.VetBugsPage?.render?.(filter || "today");
+      return;
+    }
+
+    if (name === "media") {
+      showView("media");
+      setHeader("Clinical Media & Documents", "Case sheets, echo/ultrasound, medical photography, and video records.", false);
+      document.body.classList.remove("reports-mode");
+      global.VetDashboardFilters?.showBar?.(true);
+      global.VetMediaPage?.render?.(filter || "all");
       return;
     }
 

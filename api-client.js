@@ -439,6 +439,18 @@
       return this._request("DELETE", `/api/media/${encodeURIComponent(mediaId)}`);
     }
 
+    petMedia(petId, { visitDate, sessionId, category } = {}) {
+      const params = {};
+      if (visitDate) params.visit_date = visitDate;
+      if (sessionId) params.session_id = sessionId;
+      if (category) params.category = category;
+      return this._request("GET", `/api/pets/${encodeURIComponent(petId)}/media`, { params });
+    }
+
+    mediaSummary() {
+      return this._request("GET", "/api/media/summary");
+    }
+
     listMedia({ petId, deviceId, category, limit = 100, offset = 0 } = {}) {
       const params = { limit, offset };
       if (petId) params.pet_id = petId;
@@ -447,23 +459,27 @@
       return this._request("GET", "/api/media/list", { params });
     }
 
-    presignedUploadUrl({ petId, examSessionId, filename, mimeType, category = "bug_report" }) {
+    presignedUploadUrl({ petId, examSessionId, sessionId, filename, mimeType, category = "image", visitDate }) {
       const json = {
         pet_id: petId,
-        exam_session_id: examSessionId,
+        session_id: sessionId || examSessionId,
+        exam_session_id: examSessionId || sessionId,
         filename: filename,
         mime_type: mimeType,
         category: category,
       };
+      if (visitDate) json.visit_date = visitDate;
       return this._request("POST", "/api/media/presigned-upload-url", { json });
     }
 
-    confirmMediaUpload({ mediaId, s3Key, petId, examSessionId, originalFilename, mimeType, fileSizeBytes, category = "bug_report", title, notes }) {
+    confirmMediaUpload({ mediaId, fileId, s3Key, petId, examSessionId, sessionId, originalFilename, mimeType, fileSizeBytes, category = "image", title, notes, visitDate }) {
       const json = {
-        media_id: mediaId,
+        media_id: mediaId || fileId,
+        file_id: fileId || mediaId,
         s3_key: s3Key,
         pet_id: petId,
-        exam_session_id: examSessionId,
+        session_id: sessionId || examSessionId,
+        exam_session_id: examSessionId || sessionId,
         original_filename: originalFilename,
         mime_type: mimeType,
         file_size_bytes: fileSizeBytes,
@@ -471,7 +487,35 @@
         title: title || originalFilename,
         notes: notes || "",
       };
+      if (visitDate) json.visit_date = visitDate;
       return this._request("POST", "/api/media/confirm", { json });
+    }
+
+    multipartInitiate({ petId, examSessionId, sessionId, filename, mimeType, category = "video", visitDate }) {
+      const json = {
+        pet_id: petId,
+        session_id: sessionId || examSessionId,
+        filename,
+        mime_type: mimeType,
+        category,
+      };
+      if (visitDate) json.visit_date = visitDate;
+      return this._request("POST", "/api/media/multipart/initiate", { json });
+    }
+
+    multipartPartUrl({ s3Key, uploadId, partNumber }) {
+      const json = { s3_key: s3Key, upload_id: uploadId, part_number: partNumber };
+      return this._request("POST", "/api/media/multipart/part-url", { json });
+    }
+
+    multipartComplete({ s3Key, uploadId, parts }) {
+      const json = { s3_key: s3Key, upload_id: uploadId, parts };
+      return this._request("POST", "/api/media/multipart/complete", { json });
+    }
+
+    multipartAbort({ s3Key, uploadId }) {
+      const json = { s3_key: s3Key, upload_id: uploadId };
+      return this._request("POST", "/api/media/multipart/abort", { json });
     }
   }
 
