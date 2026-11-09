@@ -6616,6 +6616,18 @@ body.reports-mode .page-back-btn {
   border-color: #059669;
 }
 
+.btn-tile-download-docx {
+  background: #eff6ff;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
+.btn-tile-download-docx:hover {
+  background: #1d4ed8;
+  color: #ffffff;
+  border-color: #1d4ed8;
+}
+
 .tile-unavailable-tag {
   font-size: 0.78rem;
   color: #94a3b8;

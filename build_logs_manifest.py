@@ -161,6 +161,21 @@ def build():
                 "metrics": metrics,
                 "markdown_content": md_text,
             }
+
+        # Word Document (.docx) Root-Cause Report
+        docx_files = [f for f in root_files if f.suffix.lower() == ".docx"]
+        report_docx = docx_files[0] if docx_files else None
+        docx_info = None
+        if report_docx and report_docx.exists():
+            dest_docx = target_storage_dir / report_docx.name
+            if not dest_docx.exists() or dest_docx.stat().st_size != report_docx.stat().st_size:
+                shutil.copy2(report_docx, dest_docx)
+                print(f"  [copy] {report_docx.name} -> {dest_docx.relative_to(BASE_DIR)}")
+            docx_info = {
+                "name": report_docx.name,
+                "size_bytes": report_docx.stat().st_size,
+                "storage_url": f"logs_storage/{item}/{report_docx.name}",
+            }
             
         # Log streams inspection
         log_streams = []
@@ -288,6 +303,7 @@ def build():
             "subdirectories": list(set(subdirs)),
             "excel": excel_info,
             "report": report_info,
+            "docx": docx_info,
             "log_streams": log_streams,
         }
         sessions.append(session_entry)

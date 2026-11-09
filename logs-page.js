@@ -954,6 +954,15 @@
                 <button type="button" class="btn-tile-action btn-tile-download-md" data-session-id="${escapeHtml(session.id)}" title="Download .md report">
                   <span>📥 Download .md</span>
                 </button>
+                ${
+                  session.docx
+                    ? `
+                  <button type="button" class="btn-tile-action btn-tile-download-docx" data-session-id="${escapeHtml(session.id)}" title="Download formal investigation Word report (.docx)">
+                    <span>📄 Download Word (.docx)</span>
+                  </button>
+                `
+                    : ""
+                }
               `
                   : `<span class="tile-unavailable-tag">Not Compiled</span>`
               }
@@ -1296,6 +1305,14 @@
       if (dlMdBtn && session.report) {
         e.stopPropagation();
         downloadFile(session.report.storage_url, session.report.name);
+        return;
+      }
+
+      // 4b. Download Word Document (.docx)
+      const dlDocxBtn = e.target.closest(".btn-tile-download-docx");
+      if (dlDocxBtn && session.docx) {
+        e.stopPropagation();
+        downloadFile(session.docx.storage_url, session.docx.name);
         return;
       }
 
