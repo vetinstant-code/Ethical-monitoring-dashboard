@@ -64,8 +64,46 @@
     return client;
   }
 
+  function parseDateIso(str) {
+    if (!str) return null;
+    const s = String(str).trim();
+    const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (dmy) {
+      const [, d, m, y] = dmy;
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+    const iso = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+    if (iso) {
+      const [, y, m, d] = iso;
+      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+    const parsed = new Date(s);
+    if (!Number.isNaN(parsed.getTime())) {
+      return istDateFormatter.format(parsed);
+    }
+    return null;
+  }
+
+  function getDocDateIst(doc) {
+    if (doc.visit_date) {
+      const iso = parseDateIso(doc.visit_date);
+      if (iso) return iso;
+    }
+    if (doc.uploaded_at) {
+      const iso = parseDateIso(doc.uploaded_at);
+      if (iso) return iso;
+    }
+    return null;
+  }
+
+  function matchesTargetDate(doc, targetIso) {
+    if (!targetIso) return true;
+    return getDocDateIst(doc) === targetIso;
+  }
+
   // State
   const state = {
+    currentScope: "today", // 'today' or 'all'
     currentCategory: "all", // 'all', 'case_sheet', 'echo', 'image', 'video'
     searchQuery: "",
     isLoading: false,
@@ -161,30 +199,42 @@
    */
   function renderUi() {
     const docs = state.documents;
+    const targetDate = state.date || getSelectedDate();
 
-    // Counts by category
-    const countCaseSheet = docs.filter((d) => d.category === "case_sheet").length;
-    const countEcho = docs.filter((d) => d.category === "echo").length;
-    const countImage = docs.filter((d) => d.category === "image").length;
-    const countVideo = docs.filter((d) => d.category === "video").length;
-    const totalCount = docs.length;
+    // Today's docs vs all docs
+    const todayDocs = docs.filter((d) => matchesTargetDate(d, targetDate));
 
-    // Total storage bytes
-    const totalBytes = docs.reduce((acc, d) => acc + (Number(d.file_size_bytes) || 0), 0);
-    const storageDisplay = formatBytes(totalBytes);
+    // Base docs according to current scope
+    const baseDocs = state.currentScope === "today" ? todayDocs : docs;
+
+    // Counts by category (across the currently active scope)
+    const countToday = todayDocs.length;
+    const countAll = docs.length;
+    const countCaseSheet = baseDocs.filter((d) => d.category === "case_sheet").length;
+    const countEcho = baseDocs.filter((d) => d.category === "echo").length;
+    const countImage = baseDocs.filter((d) => d.category === "image").length;
+    const countVideo = baseDocs.filter((d) => d.category === "video").length;
 
     // Update KPI cards
+    const elToday = document.getElementById("media-count-today");
+    const elAll = document.getElementById("media-count-all");
     const elCaseSheet = document.getElementById("media-count-casesheet");
     const elEcho = document.getElementById("media-count-echo");
     const elImage = document.getElementById("media-count-image");
     const elVideo = document.getElementById("media-count-video");
-    const elStorage = document.getElementById("media-count-storage");
 
+    if (elToday) elToday.textContent = countToday;
+    if (elAll) elAll.textContent = countAll;
     if (elCaseSheet) elCaseSheet.textContent = countCaseSheet;
     if (elEcho) elEcho.textContent = countEcho;
     if (elImage) elImage.textContent = countImage;
     if (elVideo) elVideo.textContent = countVideo;
-    if (elStorage) elStorage.textContent = storageDisplay;
+
+    // Scope toggle counts
+    const scopeTodayCount = document.getElementById("media-scope-today-count");
+    const scopeAllCount = document.getElementById("media-scope-all-count");
+    if (scopeTodayCount) scopeTodayCount.textContent = countToday;
+    if (scopeAllCount) scopeAllCount.textContent = countAll;
 
     // Update Tab counts
     const tabAllCount = document.getElementById("media-tab-all-count");
@@ -193,14 +243,14 @@
     const tabImageCount = document.getElementById("media-tab-image-count");
     const tabVideoCount = document.getElementById("media-tab-video-count");
 
-    if (tabAllCount) tabAllCount.textContent = totalCount;
+    if (tabAllCount) tabAllCount.textContent = baseDocs.length;
     if (tabCaseSheetCount) tabCaseSheetCount.textContent = countCaseSheet;
     if (tabEchoCount) tabEchoCount.textContent = countEcho;
     if (tabImageCount) tabImageCount.textContent = countImage;
     if (tabVideoCount) tabVideoCount.textContent = countVideo;
 
     // Filter items based on active tab category
-    let filtered = docs.slice();
+    let filtered = baseDocs.slice();
     if (state.currentCategory && state.currentCategory !== "all") {
       filtered = filtered.filter((d) => d.category === state.currentCategory);
     }
@@ -224,7 +274,9 @@
     if (!root) return;
 
     if (!filtered.length) {
-      let emptyMsg = `No clinical documents found in category "${state.currentCategory}".`;
+      let emptyMsg = state.currentScope === "today"
+        ? `No clinical documents uploaded for device ${state.activeDevice} on ${formatDisplayDate(targetDate)}.`
+        : `No clinical documents found in category "${state.currentCategory}".`;
       if (query) emptyMsg = `No results found matching "${query}".`;
       root.innerHTML = `
         <div class="empty-state bugs-empty-state">
@@ -235,6 +287,11 @@
           </svg>
           <p class="bugs-error-title">No Clinical Media</p>
           <p class="bugs-error-desc">${escapeHtml(emptyMsg)}</p>
+          ${state.currentScope === "today" && docs.length > 0 ? `
+            <button type="button" class="btn-primary-action btn-switch-all-media" id="btn-switch-all-media" style="margin-top: 14px;">
+              <span>View All Clinical Records (${docs.length})</span>
+            </button>
+          ` : ""}
         </div>`;
       return;
     }
@@ -270,9 +327,11 @@
       const isImage = item.category === "image" || item.category === "echo" || item.mime_type?.startsWith("image/");
       const isPdf = item.mime_type?.includes("pdf") || item.original_filename?.endsWith(".pdf");
 
+      const metaStr = `${petName !== 'Animal' ? petName + (species ? ' (' + species + ')' : '') + ' • ' : ''}${sessionLabel ? sessionLabel + ' • ' : ''}${dateStr}`;
+
       return `
         <article class="clinical-media-card" data-media-id="${escapeHtml(mediaId)}">
-          <div class="clinical-media-preview-wrap">
+          <div class="clinical-media-preview-wrap" data-url="${escapeHtml(viewUrl)}" data-title="${escapeHtml(title)}" data-is-video="${isVideo ? 'true' : 'false'}" data-is-pdf="${isPdf ? 'true' : 'false'}" data-notes="${escapeHtml(notes)}" data-meta="${escapeHtml(metaStr)}" role="button" tabindex="0" title="Click to preview document">
             <span class="clinical-media-badge ${catBadge.className}">${catBadge.label}</span>
             ${isImage ? `
               <img src="${escapeHtml(viewUrl)}" alt="${escapeHtml(title)}" class="clinical-media-img" loading="lazy" onerror="this.classList.add('is-fallback');" />
@@ -303,7 +362,9 @@
               ${sessionLabel ? `<span title="ID: ${escapeHtml(item.session_id)}">• ${escapeHtml(sessionLabel)}</span>` : ""}
               ${sizeStr ? `<span>• ${escapeHtml(sizeStr)}</span>` : ""}
               <span>• Device: ${escapeHtml(deviceId)}</span>
-              ${petName !== "Animal" ? `<span>• Pet: <strong>${escapeHtml(petName)}</strong> (${escapeHtml(species)})</span>` : ""}
+              ${petName !== "Animal" ? `
+                <span>• Pet: <button type="button" class="btn-media-pet-link" data-pet-id="${escapeHtml(item.pet_id || '')}" title="View ${escapeHtml(petName)} history"><strong>${escapeHtml(petName)}</strong> (${escapeHtml(species)})</button></span>
+              ` : ""}
             </div>
 
             ${notes ? `
@@ -313,12 +374,17 @@
             ` : ""}
 
             <div class="clinical-media-actions">
-              <button type="button" class="btn-media-action btn-media-view" data-url="${escapeHtml(viewUrl)}" data-title="${escapeHtml(title)}" data-is-video="${isVideo ? 'true' : 'false'}" data-is-pdf="${isPdf ? 'true' : 'false'}">
+              <button type="button" class="btn-media-action btn-media-view" data-url="${escapeHtml(viewUrl)}" data-title="${escapeHtml(title)}" data-is-video="${isVideo ? 'true' : 'false'}" data-is-pdf="${isPdf ? 'true' : 'false'}" data-notes="${escapeHtml(notes)}" data-meta="${escapeHtml(metaStr)}">
                 <span>View</span>
               </button>
               <a href="${escapeHtml(downloadUrl)}" download class="btn-media-action btn-media-download" target="_blank">
                 <span>Download</span>
               </a>
+              ${item.pet_id ? `
+                <button type="button" class="btn-media-action btn-media-history" data-pet-id="${escapeHtml(item.pet_id)}" title="View complete animal history">
+                  <span>🐾 History</span>
+                </button>
+              ` : ""}
             </div>
           </div>
         </article>`;
@@ -338,7 +404,7 @@
   /**
    * Modal Lightbox (supports image, video, and PDF)
    */
-  function openLightbox(url, title, isVideo, isPdf) {
+  function openLightbox(url, title, isVideo, isPdf, notes, metaStr) {
     const overlay = document.createElement("div");
     overlay.className = "bug-modal-overlay bug-lightbox-overlay";
     overlay.innerHTML = `
@@ -364,6 +430,17 @@
             <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" class="lightbox-full-img" />
           `}
         </div>
+        ${(metaStr || notes) ? `
+          <div class="bug-lightbox-footer">
+            ${metaStr ? `<div class="lightbox-meta-info">${escapeHtml(metaStr)}</div>` : ""}
+            ${notes ? `
+              <div class="lightbox-notes-box">
+                <span class="lightbox-notes-label">Doctor Observation / Notes:</span>
+                <p class="lightbox-notes-text">${escapeHtml(notes)}</p>
+              </div>
+            ` : ""}
+          </div>
+        ` : ""}
       </div>`;
 
     document.body.appendChild(overlay);
@@ -629,6 +706,16 @@
       renderUi();
     });
 
+    // Scope tabs (Today vs All)
+    document.querySelectorAll(".media-scope-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".media-scope-tab").forEach((t) => t.classList.remove("is-active"));
+        tab.classList.add("is-active");
+        state.currentScope = tab.getAttribute("data-scope") || "today";
+        renderUi();
+      });
+    });
+
     // Category filter tabs
     document.querySelectorAll(".media-filter-tab").forEach((tab) => {
       tab.addEventListener("click", () => {
@@ -639,30 +726,102 @@
       });
     });
 
-    // Content root event delegation (View)
+    // KPI Cards click to filter
+    document.getElementById("media-kpi-today")?.addEventListener("click", () => {
+      const todayTab = document.querySelector('.media-scope-tab[data-scope="today"]');
+      if (todayTab) todayTab.click();
+    });
+
+    document.getElementById("media-kpi-all")?.addEventListener("click", () => {
+      const allTab = document.querySelector('.media-scope-tab[data-scope="all"]');
+      if (allTab) allTab.click();
+    });
+
+    const kpiCategoryMap = [
+      { id: "media-count-casesheet", cat: "case_sheet" },
+      { id: "media-count-echo", cat: "echo" },
+      { id: "media-count-image", cat: "image" },
+      { id: "media-count-video", cat: "video" },
+    ];
+    kpiCategoryMap.forEach(({ id, cat }) => {
+      document.getElementById(id)?.closest(".media-kpi-card")?.addEventListener("click", () => {
+        const targetTab = document.querySelector(`.media-filter-tab[data-tab="${cat}"]`);
+        if (targetTab) targetTab.click();
+      });
+    });
+
+    // Content root event delegation (View, History, Preview, Switch to All)
     const contentRoot = document.getElementById("media-content-root");
     if (contentRoot) {
       contentRoot.addEventListener("click", async (e) => {
-        // View button
-        const viewBtn = e.target.closest(".btn-media-view");
-        if (viewBtn) {
+        // Switch all button in empty state
+        const switchBtn = e.target.closest("#btn-switch-all-media");
+        if (switchBtn) {
+          const allTab = document.querySelector('.media-scope-tab[data-scope="all"]');
+          if (allTab) allTab.click();
+          return;
+        }
+
+        // Animal name link or History button
+        const petLink = e.target.closest(".btn-media-pet-link, .btn-media-history");
+        if (petLink) {
           e.stopPropagation();
-          const url = viewBtn.getAttribute("data-url");
-          const title = viewBtn.getAttribute("data-title");
-          const isVideo = viewBtn.getAttribute("data-is-video") === "true";
-          const isPdf = viewBtn.getAttribute("data-is-pdf") === "true";
-          openLightbox(url, title, isVideo, isPdf);
+          const petId = petLink.getAttribute("data-pet-id");
+          if (petId && global.VetAppPages?.openAnimalHistory) {
+            global.VetAppPages.openAnimalHistory(petId);
+          }
+          return;
+        }
+
+        // View button or Preview click
+        const viewTrigger = e.target.closest(".btn-media-view, .clinical-media-preview-wrap");
+        if (viewTrigger) {
+          e.stopPropagation();
+          const url = viewTrigger.getAttribute("data-url");
+          const title = viewTrigger.getAttribute("data-title");
+          const isVideo = viewTrigger.getAttribute("data-is-video") === "true";
+          const isPdf = viewTrigger.getAttribute("data-is-pdf") === "true";
+          const notes = viewTrigger.getAttribute("data-notes") || "";
+          const meta = viewTrigger.getAttribute("data-meta") || "";
+          if (url) {
+            openLightbox(url, title, isVideo, isPdf, notes, meta);
+          }
           return;
         }
       });
     }
+
+    // Subscribe to date filter changes
+    global.VetDashboardFilters?.subscribe?.((f) => {
+      const activeNav = document.querySelector(".nav-item.active")?.getAttribute("data-nav");
+      if (activeNav === "media") {
+        render(state.currentScope, state.currentCategory);
+      }
+    });
   }
 
   /**
    * Main render method invoked when navigating to #/media
    */
-  function render(cat = "all") {
-    state.currentCategory = cat;
+  function render(scope = "today", cat = "all") {
+    state.currentScope = scope || "today";
+    state.currentCategory = cat || "all";
+    state.date = getSelectedDate();
+
+    // Sync scope tabs in DOM
+    document.querySelectorAll(".media-scope-tab").forEach((t) => {
+      const s = t.getAttribute("data-scope");
+      if (s === state.currentScope) t.classList.add("is-active");
+      else t.classList.remove("is-active");
+    });
+
+    // Sync category tabs in DOM
+    document.querySelectorAll(".media-filter-tab").forEach((t) => {
+      const c = t.getAttribute("data-tab");
+      if (c === state.currentCategory) t.classList.add("is-active");
+      else t.classList.remove("is-active");
+    });
+
     loadMediaData();
   }
 

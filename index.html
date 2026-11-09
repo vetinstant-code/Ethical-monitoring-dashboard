@@ -208,6 +208,18 @@
               <span>Clinical Media</span>
             </a>
           </li>
+          <li class="nav-item" data-nav="logs">
+            <a href="#/logs" class="nav-link">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              <span>System Logs</span>
+            </a>
+          </li>
           <!-- Settings — hidden until feature is ready -->
           <li class="nav-item" hidden>
             <a href="#" class="nav-link">
@@ -342,24 +354,68 @@
 
       <!-- VIEW: DASHBOARD HOME -->
       <div id="view-dashboard" class="app-view">
-        <!-- Row 1: species KPI strip -->
-        <section class="cv-kpi-strip">
-          <button type="button" class="cv-kpi-main kpi-card-clickable" id="kpi-card-total-animals">
-            <div class="cv-kpi-main-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
-            </div>
-            <div>
-              <span class="cv-kpi-label">Total Animals Tested Today</span>
-              <h3 class="cv-kpi-value" id="kpi-total-animals">0</h3>
-              <span class="cv-kpi-trend" id="kpi-trend-total">—</span>
-            </div>
-          </button>
+        <!-- Row 1: Operational KPI Strip & Species Breakdown -->
+        <section class="cv-kpi-section">
+          <div class="cv-kpi-cards-grid">
+            <!-- Operational Card 1: Animals Tested Today -->
+            <button type="button" class="cv-kpi-main kpi-card-clickable" id="kpi-card-total-animals" title="View all animals tested today">
+              <div class="cv-kpi-main-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+              </div>
+              <div class="cv-kpi-main-content">
+                <span class="cv-kpi-label">Animals Tested Today</span>
+                <h3 class="cv-kpi-value" id="kpi-total-animals">0</h3>
+                <span class="cv-kpi-trend" id="kpi-trend-total">—</span>
+              </div>
+            </button>
+
+            <!-- Operational Card 2: Bugs Reported Today -->
+            <button type="button" class="cv-kpi-main cv-kpi-main--bugs kpi-card-clickable" id="kpi-card-bugs-today" title="Open Bug Reports page">
+              <div class="cv-kpi-main-icon cv-kpi-main-icon--bugs">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="8" y="9" width="8" height="10" rx="4"></rect>
+                  <path d="M12 9V5"></path>
+                  <path d="M9 5a3 3 0 0 1 6 0"></path>
+                  <line x1="2" y1="13" x2="6" y2="13"></line>
+                  <line x1="22" y1="13" x2="18" y2="13"></line>
+                  <line x1="7" y1="6" x2="3" y2="3"></line>
+                  <line x1="17" y1="6" x2="21" y2="3"></line>
+                  <line x1="7" y1="17" x2="3" y2="20"></line>
+                  <line x1="17" y1="17" x2="21" y2="20"></line>
+                </svg>
+              </div>
+              <div class="cv-kpi-main-content">
+                <span class="cv-kpi-label">Bugs Reported Today</span>
+                <h3 class="cv-kpi-value cv-kpi-value--bugs" id="kpi-bugs-today">0</h3>
+                <span class="cv-kpi-trend cv-kpi-trend--bugs" id="kpi-trend-bugs">View reported issues →</span>
+              </div>
+            </button>
+
+            <!-- Operational Card 3: Clinical Documents Uploaded -->
+            <button type="button" class="cv-kpi-main cv-kpi-main--media kpi-card-clickable" id="kpi-card-media-today" title="Open Clinical Media & Documents">
+              <div class="cv-kpi-main-icon cv-kpi-main-icon--media">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                  <circle cx="7" cy="8" r="1.5"></circle>
+                  <polyline points="16 7 11 12 8 9 3 14"></polyline>
+                </svg>
+              </div>
+              <div class="cv-kpi-main-content">
+                <span class="cv-kpi-label">Clinical Docs Uploaded</span>
+                <h3 class="cv-kpi-value cv-kpi-value--media" id="kpi-media-today">0</h3>
+                <span class="cv-kpi-trend cv-kpi-trend--media" id="kpi-trend-media">View case records →</span>
+              </div>
+            </button>
+          </div>
+
           <div class="cv-species-grid" id="cv-species-cards"></div>
         </section>
 
         <!-- Row 2: progress + charts -->
         <section class="cv-row-3">
-          <article class="cv-card cv-progress-card">
+          <article class="cv-card cv-progress-card kpi-card-clickable" id="cv-progress-card-box" role="button" tabindex="0" title="View full committee reports & progress">
             <h3 class="cv-card-title">Validation Progress (All Time)</h3>
             <div class="cv-progress-stats">
               <div><span>Target Animals</span><strong id="cv-target-count">1000</strong></div>
@@ -395,14 +451,17 @@
               <div class="cv-summary-box kpi-card-clickable" id="cv-box-tested" role="button" tabindex="0" title="View all animals tested today">
                 <span>Animals Tested</span>
                 <strong id="cv-sum-tested">0</strong>
+                <span class="cv-box-action-hint">View all →</span>
               </div>
               <div class="cv-summary-box kpi-card-clickable" id="cv-box-success" role="button" tabindex="0" title="View successful cases today">
                 <span>Successful Cases</span>
                 <strong id="cv-sum-success">0</strong>
+                <span class="cv-box-action-hint">View passed →</span>
               </div>
               <div class="cv-summary-box kpi-card-clickable" id="cv-box-failed" role="button" tabindex="0" title="View incomplete cases today">
                 <span>Incomplete Cases</span>
                 <strong id="cv-sum-failed">0</strong>
+                <span class="cv-box-action-hint">View incomplete →</span>
               </div>
               <div class="cv-summary-box cv-summary-box--rate">
                 <span>Success Rate</span>
@@ -411,6 +470,16 @@
                   <path d="M0 18 Q 15 10, 30 14 T 60 8 T 85 12 T 100 6" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" fill="none" />
                 </svg>
               </div>
+              <div class="cv-summary-box cv-summary-box--bugs kpi-card-clickable" id="cv-box-bugs" role="button" tabindex="0" title="View bug reports today">
+                <span>Bugs Reported</span>
+                <strong id="cv-sum-bugs">0</strong>
+                <span class="cv-box-action-hint">Inspect bugs →</span>
+              </div>
+              <div class="cv-summary-box cv-summary-box--media kpi-card-clickable" id="cv-box-media" role="button" tabindex="0" title="View clinical media & documents uploaded today">
+                <span>Clinical Documents</span>
+                <strong id="cv-sum-media">0</strong>
+                <span class="cv-box-action-hint">View documents →</span>
+              </div>
             </div>
           </article>
         </section>
@@ -418,7 +487,10 @@
         <!-- Row 4: Recent Cases (Today) -->
         <section class="cv-row-1">
           <article class="cv-card cv-card--wide">
-            <h3 class="cv-card-title">Recent Cases (Today)</h3>
+            <div class="cv-card-header-flex">
+              <h3 class="cv-card-title">Recent Cases (Today)</h3>
+              <button type="button" class="btn-card-header-link" id="btn-view-all-cases">View All Cases Today →</button>
+            </div>
             <div class="rounds-table-scroller cv-table-scroll cv-table-scroll--cases">
               <table class="rounds-log-table">
                 <thead><tr><th>Time</th><th>Animal Name</th><th>ID</th><th>Species</th><th>Tests</th><th>Status</th></tr></thead>
@@ -893,25 +965,25 @@
 
           <!-- KPI Summary Strip -->
           <div class="media-kpi-grid">
-            <div class="media-kpi-card" id="media-kpi-casesheet">
-              <span class="media-kpi-num" id="media-count-casesheet">0</span>
-              <span class="media-kpi-label">Case Sheets</span>
+            <div class="media-kpi-card kpi-card-clickable" id="media-kpi-today" title="View documents uploaded today">
+              <span class="media-kpi-num" id="media-count-today">0</span>
+              <span class="media-kpi-label">Uploaded Today</span>
             </div>
-            <div class="media-kpi-card media-kpi-card--echo" id="media-kpi-echo">
+            <div class="media-kpi-card kpi-card-clickable" id="media-kpi-all" title="View all clinical documents">
+              <span class="media-kpi-num" id="media-count-all">0</span>
+              <span class="media-kpi-label">Total Documents</span>
+            </div>
+            <div class="media-kpi-card media-kpi-card--echo kpi-card-clickable" id="media-kpi-echo" title="Filter by Echo / Ultrasound">
               <span class="media-kpi-num" id="media-count-echo">0</span>
               <span class="media-kpi-label">Echo / Ultrasound</span>
             </div>
-            <div class="media-kpi-card media-kpi-card--image" id="media-kpi-image">
+            <div class="media-kpi-card media-kpi-card--image kpi-card-clickable" id="media-kpi-image" title="Filter by Medical Photos">
               <span class="media-kpi-num" id="media-count-image">0</span>
               <span class="media-kpi-label">Medical Photos</span>
             </div>
-            <div class="media-kpi-card media-kpi-card--video" id="media-kpi-video">
+            <div class="media-kpi-card media-kpi-card--video kpi-card-clickable" id="media-kpi-video" title="Filter by Clinical Videos">
               <span class="media-kpi-num" id="media-count-video">0</span>
               <span class="media-kpi-label">Clinical Videos</span>
-            </div>
-            <div class="media-kpi-card media-kpi-card--storage" id="media-kpi-storage">
-              <span class="media-kpi-num" id="media-count-storage">0 MB</span>
-              <span class="media-kpi-label">Total Storage</span>
             </div>
           </div>
 
@@ -924,8 +996,12 @@
               </svg>
               <input type="text" id="media-search-input" placeholder="Search pet, title, notes, session ID, filename..." />
             </div>
+            <div class="bugs-filter-tabs media-scope-tabs">
+              <button type="button" class="bugs-filter-tab media-scope-tab is-active" data-scope="today">Today's Uploads (<span id="media-scope-today-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab media-scope-tab" data-scope="all">All Documents (<span id="media-scope-all-count">0</span>)</button>
+            </div>
             <div class="media-filter-tabs">
-              <button type="button" class="media-filter-tab is-active" data-tab="all">All Documents (<span id="media-tab-all-count">0</span>)</button>
+              <button type="button" class="media-filter-tab is-active" data-tab="all">All (<span id="media-tab-all-count">0</span>)</button>
               <button type="button" class="media-filter-tab" data-tab="case_sheet">Case Sheets (<span id="media-tab-case_sheet-count">0</span>)</button>
               <button type="button" class="media-filter-tab" data-tab="echo">Echo (<span id="media-tab-echo-count">0</span>)</button>
               <button type="button" class="media-filter-tab" data-tab="image">Photos (<span id="media-tab-image-count">0</span>)</button>
@@ -936,6 +1012,120 @@
           <!-- Media cards grid container -->
           <div id="media-content-root" class="media-content-root">
             <p class="empty-state">Loading clinical media…</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- VIEW: SYSTEM & DEVICE LOGS -->
+      <div id="view-logs" class="app-view" hidden>
+        <section class="bugs-section logs-section">
+          <div class="bugs-header logs-header">
+            <div>
+              <h2 class="bugs-section-title">Forensic System & Device Logs</h2>
+              <p class="bugs-section-sub">
+                Decoded multi-stream timeline spreadsheets (.xlsx), forensic network speed & telemetry analysis reports (.md), and CloudWatch raw device traces.
+              </p>
+            </div>
+            <div class="logs-header-actions">
+              <button type="button" id="logs-btn-refresh" class="btn-refresh" title="Refresh logs from local storage">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                  <path d="M23 4v6h-6"></path>
+                  <path d="M1 20v-6h6"></path>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+                <span>Refresh Logs</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI Metric Cards -->
+          <div class="bugs-kpi-row logs-kpi-row">
+            <div class="bugs-kpi-card">
+              <div class="bugs-kpi-num" id="logs-kpi-total-sessions">0</div>
+              <div class="bugs-kpi-label">Log Sessions Recorded</div>
+            </div>
+            <div class="bugs-kpi-card">
+              <div class="bugs-kpi-num" id="logs-kpi-excel-count">0</div>
+              <div class="bugs-kpi-label">Decoded Timelines (.xlsx)</div>
+            </div>
+            <div class="bugs-kpi-card">
+              <div class="bugs-kpi-num" id="logs-kpi-reports-count">0</div>
+              <div class="bugs-kpi-label">Forensic Speed Reports (.md)</div>
+            </div>
+            <div class="bugs-kpi-card">
+              <div class="bugs-kpi-num bugs-kpi-dev" id="logs-kpi-device">BRUNO</div>
+              <div class="bugs-kpi-label">Active Monitored Device</div>
+            </div>
+          </div>
+
+          <!-- Filter and Search Strip -->
+          <div class="bugs-toolbar logs-toolbar">
+            <div class="bugs-search-box logs-search-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="logs-search-input" placeholder="Search session date, time window, speed errors, files..." />
+            </div>
+            <div class="bugs-filter-tabs logs-filter-tabs">
+              <button type="button" class="bugs-filter-tab logs-filter-tab is-active" data-tab="all">All Sessions (<span id="logs-tab-all-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab logs-filter-tab" data-tab="timeline">With Decoded Timeline (<span id="logs-tab-timeline-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab logs-filter-tab" data-tab="report">With Speed Report (<span id="logs-tab-report-count">0</span>)</button>
+              <button type="button" class="bugs-filter-tab logs-filter-tab" data-tab="recent">Latest Sessions (<span id="logs-tab-recent-count">0</span>)</button>
+            </div>
+          </div>
+
+          <!-- Dedicated Timing Window Selection Strip -->
+          <div class="logs-timing-toolbar">
+            <div class="logs-timing-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <span>Session Timing (IST):</span>
+            </div>
+
+            <!-- Pre-defined Time Slot Dropdown -->
+            <div class="logs-timing-select-group">
+              <select id="logs-time-slot-select" class="logs-time-select" aria-label="Select timing slot">
+                <option value="all">All Timings (Full Day)</option>
+                <option value="morning">Morning Rounds (08:00 - 12:00 IST)</option>
+                <option value="afternoon">Afternoon Session (12:00 - 17:00 IST)</option>
+                <option value="night">Evening & Night (17:00 - 23:59 IST)</option>
+                <optgroup label="Specific Recorded Windows">
+                  <option value="09:30-12:00">09:30 - 12:00 IST (Bruno Main Trial)</option>
+                  <option value="09:30-12:15">09:30 - 12:15 IST (Extended Session)</option>
+                  <option value="09:30-11:40">09:30 - 11:40 IST (Clinical Round)</option>
+                  <option value="08:00-08:25">08:00 - 08:25 IST (Morning Check)</option>
+                  <option value="12:00-12:50">12:00 - 12:50 IST (Midday Round)</option>
+                  <option value="15:00-15:50">15:00 - 15:50 IST (Afternoon Trial)</option>
+                  <option value="19:25-20:10">19:25 - 20:10 IST (Evening Trial)</option>
+                  <option value="20:00-20:13">20:00 - 20:13 IST (Evening Check)</option>
+                  <option value="20:15-20:50">20:15 - 20:50 IST (Night Trial)</option>
+                  <option value="21:30-22:17">21:30 - 22:17 IST (Late Night Trace)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <!-- Custom From / To Time Pickers -->
+            <div class="logs-timing-custom-range">
+              <span class="range-sep">From:</span>
+              <input type="time" id="logs-time-from" class="logs-time-input" aria-label="Start time IST" />
+              <span class="range-sep">To:</span>
+              <input type="time" id="logs-time-to" class="logs-time-input" aria-label="End time IST" />
+              <button type="button" id="btn-apply-time-filter" class="btn-time-filter">Apply Time</button>
+              <button type="button" id="btn-clear-time-filter" class="btn-time-clear" title="Clear timing filter">✕ Clear</button>
+            </div>
+
+            <!-- Active filter badge -->
+            <div id="logs-active-timing-badge" class="logs-active-timing-badge" hidden>
+              <span>⏱️ Filtering: <strong id="logs-active-timing-text">All</strong></span>
+            </div>
+          </div>
+
+          <!-- Logs sessions container -->
+          <div id="logs-content-root" class="logs-content-root">
+            <p class="empty-state">Loading forensic log archives…</p>
           </div>
         </section>
       </div>
@@ -962,6 +1152,7 @@
   <script src="reports-page.js?v=82"></script>
   <script src="bugs-page.js?v=84"></script>
   <script src="media-page.js?v=84"></script>
+  <script src="logs-page.js?v=84"></script>
   <script src="login-fx.js?v=84"></script>
   <script>
     if ("serviceWorker" in navigator) {

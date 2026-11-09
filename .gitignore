@@ -5,6 +5,11 @@ package-lock.json
 .DS_Store
 Thumbs.db
 *.log
+__pycache__/
+*.pyc
+diag_cache/
+downloads/
+logs_storage/**/*.txt
 
 # Optional: uncomment to keep password out of git
 # config.api.js

@@ -85,7 +85,7 @@
       .map(({ name, count, style }) => {
         const pct = total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
         return `
-          <article class="cv-species-card">
+          <article class="cv-species-card kpi-card-clickable" data-species="${escapeHtml(name)}" role="button" tabindex="0" title="View ${escapeHtml(name)} animal list">
             <div class="cv-species-icon" style="background:${style.color}20;color:${style.color}">${style.icon}</div>
             <div class="cv-species-body">
               <span class="cv-species-name">${escapeHtml(name)}</span>
@@ -409,6 +409,30 @@
     if (elSuccess) elSuccess.textContent = String(success);
     if (elFailed) elFailed.textContent = String(totalIncomplete);
     if (elRate) elRate.textContent = `${rate}%`;
+
+    // Operational KPI & Summary: Bugs Reported Today
+    const bugsToday = Number(payload.bugsCountToday ?? payload.bugsToday ?? 0);
+    const totalBugs = Number(payload.totalBugsCount ?? payload.totalBugs ?? 0);
+    const elBugsKpi = document.getElementById("kpi-bugs-today");
+    const elBugsTrend = document.getElementById("kpi-trend-bugs");
+    const elBugsSum = document.getElementById("cv-sum-bugs");
+    if (elBugsKpi) elBugsKpi.textContent = String(bugsToday);
+    if (elBugsTrend) {
+      elBugsTrend.textContent = bugsToday > 0 ? `${bugsToday} reported today →` : `0 today (${totalBugs} total) →`;
+    }
+    if (elBugsSum) elBugsSum.textContent = String(bugsToday);
+
+    // Operational KPI & Summary: Clinical Documents Uploaded
+    const mediaToday = Number(payload.mediaCountToday ?? payload.mediaToday ?? 0);
+    const totalMedia = Number(payload.totalMediaCount ?? payload.totalMedia ?? 0);
+    const elMediaKpi = document.getElementById("kpi-media-today");
+    const elMediaTrend = document.getElementById("kpi-trend-media");
+    const elMediaSum = document.getElementById("cv-sum-media");
+    if (elMediaKpi) elMediaKpi.textContent = String(mediaToday);
+    if (elMediaTrend) {
+      elMediaTrend.textContent = mediaToday > 0 ? `${mediaToday} uploaded today →` : `${totalMedia} total files →`;
+    }
+    if (elMediaSum) elMediaSum.textContent = String(mediaToday);
 
     renderRecentCases(cases);
     renderCompareTable(comparisons);

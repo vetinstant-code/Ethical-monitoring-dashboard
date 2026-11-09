@@ -991,6 +991,8 @@
         hourly: payload.hourly,
         statusCounts: payload.statusCounts,
         completedAllTime: payload.completedAllTime,
+        bugsCountToday: payload.bugsCountToday,
+        mediaCountToday: payload.mediaCountToday,
         cases: (payload.cases || []).map((c) => [c.id, c.time, c.name, c.displayId, c.species, c.tests, c.statusLabel]),
         comparisons: (payload.comparisons || []).map((c) => [
           c.id,
@@ -1135,10 +1137,11 @@
 
       setProgress(8, "Loading today’s animals…");
 
-      const [dailyResp, yResp, rawPets] = await Promise.all([
+      const [dailyResp, yResp, rawPets, mediaResp] = await Promise.all([
         client.dailyPets(targetDate).catch(() => null),
         client.dailyPets(addDaysIso(targetDate, -1)).catch(() => null),
         store.pets.length ? Promise.resolve(null) : client.listPets().catch(() => []),
+        client.listMedia({ deviceId: activeDeviceId, limit: 500 }).catch(() => null),
       ]);
       if (gen !== syncGeneration) return;
 
@@ -1521,6 +1524,46 @@
       }
       notes.push(`Data synced for ${istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`))}.`);
 
+      // Compute operational counts for bugs and clinical media on this date
+      const allDocs = Array.isArray(mediaResp?.documents) ? mediaResp.documents : [];
+      let bugsCountToday = 0;
+      let totalBugsCount = 0;
+      let mediaCountToday = 0;
+      let totalMediaCount = 0;
+
+      function getDocDateIstLocal(doc) {
+        const rawVisit = String(doc?.visit_date || "").trim();
+        if (rawVisit) {
+          const m = rawVisit.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+          if (m) {
+            const [, d, mo, y] = m;
+            return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+          }
+          if (/^\d{4}-\d{2}-\d{2}$/.test(rawVisit)) return rawVisit;
+        }
+        const rawUp = doc?.uploaded_at || doc?.created_at;
+        if (rawUp) {
+          const dt = new Date(rawUp);
+          if (!isNaN(dt.getTime())) return istDateFormatter.format(dt);
+        }
+        return null;
+      }
+
+      allDocs.forEach((doc) => {
+        const cat = String(doc.category || "").toLowerCase();
+        const isBug = cat === "bug_report";
+        const docDate = getDocDateIstLocal(doc);
+        const isToday = docDate === targetDate;
+
+        if (isBug) {
+          totalBugsCount += 1;
+          if (isToday) bugsCountToday += 1;
+        } else {
+          totalMediaCount += 1;
+          if (isToday) mediaCountToday += 1;
+        }
+      });
+
       const finalPayload = {
         dateLabel: istDisplayFormatter.format(new Date(`${targetDate}T12:00:00`)),
         totalToday: canonicalTotalToday,
@@ -1533,6 +1576,10 @@
         cases: canonicalCases,
         comparisons: dashboardComparisons,
         notes,
+        bugsCountToday,
+        totalBugsCount,
+        mediaCountToday,
+        totalMediaCount,
       };
 
       const didRender = renderIfChanged(finalPayload, {

@@ -66,6 +66,7 @@
   // State
   const state = {
     currentTab: "today", // 'today' or 'all'
+    filterMediaOnly: false,
     searchQuery: "",
     isLoading: false,
     date: null,
@@ -74,19 +75,45 @@
   };
 
   /**
+   * Extract IST YYYY-MM-DD from visit_date or uploaded_at
+   */
+  function getDocDateIst(doc) {
+    const rawVisit = String(doc?.visit_date || "").trim();
+    if (rawVisit) {
+      const m = rawVisit.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+      if (m) {
+        const [, d, mo, y] = m;
+        return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(rawVisit)) return rawVisit;
+    }
+    const rawUp = doc?.uploaded_at || doc?.created_at;
+    if (rawUp) {
+      const dt = new Date(rawUp);
+      if (!isNaN(dt.getTime())) return istDateFormatter.format(dt);
+    }
+    return null;
+  }
+
+  /**
    * Check if a document matches the target ISO date (YYYY-MM-DD)
    */
   function matchesTargetDate(doc, targetIso) {
     if (!targetIso) return true;
-    const parts = targetIso.split("-");
-    if (parts.length !== 3) return false;
-    const [y, m, d] = parts;
-    const ddmmyyyy = `${d}/${m}/${y}`; // e.g. 04/11/2026
+    return getDocDateIst(doc) === targetIso;
+  }
 
-    const uploadedIso = String(doc.uploaded_at || "").slice(0, 10);
-    const visitDate = String(doc.visit_date || "").trim();
+  function isVideoDoc(item) {
+    const mime = String(item.mime_type || "").toLowerCase();
+    const cat = String(item.category || "").toLowerCase();
+    const fn = String(item.original_filename || item.title || "").toLowerCase();
+    return cat === "video" || mime.startsWith("video/") || /\.(mov|mp4|webm|m4v|avi|3gp)$/i.test(fn);
+  }
 
-    return uploadedIso === targetIso || visitDate === ddmmyyyy || visitDate === targetIso;
+  function isPdfDoc(item) {
+    const mime = String(item.mime_type || "").toLowerCase();
+    const fn = String(item.original_filename || item.title || "").toLowerCase();
+    return mime.includes("pdf") || fn.endsWith(".pdf");
   }
 
   /**
@@ -114,8 +141,8 @@
       const targetDevLower = activeDevice.toLowerCase();
       const bugDocs = docs.filter(doc => {
         const cat = String(doc.category || "").toLowerCase();
-        const docDev = String(doc.device_id || "").toLowerCase();
-        return cat === "bug_report" && (!targetDevLower || docDev === targetDevLower);
+        const docDev = String(doc.device_id || "").toLowerCase().trim();
+        return cat === "bug_report" && (!docDev || !targetDevLower || docDev === targetDevLower);
       });
 
       // Sort newest first
@@ -218,7 +245,7 @@
 
     if (!itemsToDisplay.length) {
       const msg = state.currentTab === "today"
-        ? `No bugs reported for device ${state.activeDevice} on ${formatDisplayDate(targetDate)}. Switch to "All Bug Reports" tab above to view previous reports.`
+        ? `No bugs reported for device ${state.activeDevice} on ${formatDisplayDate(targetDate)}.`
         : `No bug reports found for device ${state.activeDevice}.`;
       root.innerHTML = `
         <div class="empty-state bugs-empty-state">
@@ -228,6 +255,11 @@
           </svg>
           <p class="bugs-error-title">No Bug Reports</p>
           <p class="bugs-error-desc">${escapeHtml(msg)}</p>
+          ${state.currentTab === "today" && allBugs.length > 0 ? `
+            <button type="button" class="btn-primary-action btn-switch-all-bugs" id="btn-switch-all-bugs" style="margin-top: 14px;">
+              <span>View All Bug Reports (${allBugs.length})</span>
+            </button>
+          ` : ""}
         </div>`;
       return;
     }
@@ -258,20 +290,48 @@
       const dlSep = rawDl.includes("?") ? "&" : "?";
       const downloadUrl = `${apiBase}${rawDl}${dlSep}token=${encodeURIComponent(token)}&dev=${encodeURIComponent(dev)}`;
 
-      const isImage = !item.mime_type || item.mime_type.startsWith("image/");
+      const isVideo = isVideoDoc(item);
+      const isPdf = isPdfDoc(item);
+      const isImage = !isVideo && !isPdf && (!item.mime_type || item.mime_type.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(item.original_filename || ""));
+
+      const badgeHtml = isVideo
+        ? `<span class="bug-badge-pill bug-badge-pill--video">🎥 VIDEO PROOF</span>`
+        : isPdf
+        ? `<span class="bug-badge-pill bug-badge-pill--pdf">📄 PDF PROOF</span>`
+        : `<span class="bug-badge-pill">BUG PROOF</span>`;
+
+      let previewHtml = "";
+      if (isVideo) {
+        previewHtml = `
+          <div class="bug-preview-video" role="button" tabindex="0" title="Click to play video proof">
+            <div class="bug-video-overlay-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            </div>
+            <span class="bug-video-play-text">Play Video Proof</span>
+          </div>`;
+      } else if (isPdf) {
+        previewHtml = `
+          <div class="bug-preview-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <span>PDF Document</span>
+          </div>`;
+      } else if (isImage) {
+        previewHtml = `<img src="${escapeHtml(viewUrl)}" alt="${escapeHtml(title)}" class="bug-preview-img" loading="lazy" onerror="this.classList.add('is-fallback');" />`;
+      } else {
+        previewHtml = `
+          <div class="bug-preview-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <span>${escapeHtml(item.mime_type || 'Attachment')}</span>
+          </div>`;
+      }
+
+      const metaStr = `${petName !== 'Animal' ? petName + (species ? ' (' + species + ')' : '') + ' • ' : ''}${sessionLabel ? sessionLabel + ' • ' : ''}${dateStr}`;
 
       return `
         <article class="bug-report-card" data-media-id="${escapeHtml(mediaId)}">
-          <div class="bug-preview-wrap">
-            <span class="bug-badge-pill">BUG</span>
-            ${isImage ? `
-              <img src="${escapeHtml(viewUrl)}" alt="${escapeHtml(title)}" class="bug-preview-img" loading="lazy" onerror="this.classList.add('is-fallback');" />
-            ` : `
-              <div class="bug-preview-placeholder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                <span>${escapeHtml(item.mime_type || 'Attachment')}</span>
-              </div>
-            `}
+          <div class="bug-preview-wrap" data-url="${escapeHtml(viewUrl)}" data-title="${escapeHtml(title)}" data-is-video="${isVideo ? 'true' : 'false'}" data-is-pdf="${isPdf ? 'true' : 'false'}" data-notes="${escapeHtml(notes)}" data-meta="${escapeHtml(metaStr)}">
+            ${badgeHtml}
+            ${previewHtml}
           </div>
 
           <div class="bug-card-details">
@@ -281,7 +341,9 @@
               ${sessionLabel ? `<span title="ID: ${escapeHtml(item.session_id)}">• ${escapeHtml(sessionLabel)}</span>` : ""}
               ${sizeStr ? `<span>• ${escapeHtml(sizeStr)}</span>` : ""}
               <span>• Device: ${escapeHtml(deviceId)}</span>
-              ${petName !== "Animal" ? `<span>• Pet: ${escapeHtml(petName)} (${escapeHtml(species)})</span>` : ""}
+              ${petName !== "Animal" ? `
+                <span>• Pet: <button type="button" class="btn-bug-pet-link" data-pet-id="${escapeHtml(item.pet_id || '')}" title="View ${escapeHtml(petName)} history"><strong>${escapeHtml(petName)}</strong> (${escapeHtml(species)})</button></span>
+              ` : ""}
             </div>
 
             ${notes ? `
@@ -291,12 +353,17 @@
             ` : ""}
 
             <div class="bug-report-actions">
-              <button type="button" class="btn-bug-action btn-bug-view" data-url="${escapeHtml(viewUrl)}" data-title="${escapeHtml(title)}">
+              <button type="button" class="btn-bug-action btn-bug-view" data-url="${escapeHtml(viewUrl)}" data-title="${escapeHtml(title)}" data-is-video="${isVideo ? 'true' : 'false'}" data-is-pdf="${isPdf ? 'true' : 'false'}" data-notes="${escapeHtml(notes)}" data-meta="${escapeHtml(metaStr)}">
                 <span>View</span>
               </button>
               <a href="${escapeHtml(downloadUrl)}" download class="btn-bug-action btn-bug-download" target="_blank">
                 <span>Download</span>
               </a>
+              ${item.pet_id ? `
+                <button type="button" class="btn-bug-action btn-bug-history" data-pet-id="${escapeHtml(item.pet_id)}" title="View complete animal history">
+                  <span>🐾 History</span>
+                </button>
+              ` : ""}
             </div>
           </div>
         </article>`;
@@ -308,14 +375,14 @@
   /**
    * Modal Lightbox
    */
-  function openLightbox(url, title) {
+  function openLightbox(url, title, isVideo, isPdf, notes, metaStr) {
     const overlay = document.createElement("div");
     overlay.className = "bug-modal-overlay bug-lightbox-overlay";
     overlay.innerHTML = `
       <div class="bug-lightbox-dialog" role="dialog" aria-modal="true">
         <div class="bug-lightbox-head">
           <div class="lightbox-titles">
-            <span class="bug-badge-pill">BUG PROOF</span>
+            <span class="bug-badge-pill ${isVideo ? 'bug-badge-pill--video' : isPdf ? 'bug-badge-pill--pdf' : ''}">${isVideo ? '🎥 VIDEO PROOF' : isPdf ? '📄 PDF PROOF' : 'BUG PROOF'}</span>
             <h4>${escapeHtml(title || 'Bug Attachment')}</h4>
           </div>
           <div class="lightbox-actions">
@@ -326,8 +393,25 @@
           </div>
         </div>
         <div class="bug-lightbox-body">
-          <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" class="lightbox-full-img" />
+          ${isVideo ? `
+            <video src="${escapeHtml(url)}" controls autoplay class="lightbox-full-video"></video>
+          ` : isPdf ? `
+            <iframe src="${escapeHtml(url)}" class="lightbox-full-frame" title="PDF Preview"></iframe>
+          ` : `
+            <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" class="lightbox-full-img" />
+          `}
         </div>
+        ${(metaStr || notes) ? `
+          <div class="bug-lightbox-footer">
+            ${metaStr ? `<div class="lightbox-meta-info">${escapeHtml(metaStr)}</div>` : ""}
+            ${notes ? `
+              <div class="lightbox-notes-box">
+                <span class="lightbox-notes-label">Doctor Observation / Issue Note:</span>
+                <p class="lightbox-notes-text">${escapeHtml(notes)}</p>
+              </div>
+            ` : ""}
+          </div>
+        ` : ""}
       </div>`;
 
     document.body.appendChild(overlay);
@@ -364,17 +448,53 @@
       });
     });
 
-    // Content root event delegation (View)
+    // KPI Summary Cards clicking to filter
+    document.getElementById("bugs-kpi-tested")?.closest(".bugs-kpi-card")?.addEventListener("click", () => {
+      const todayTab = document.querySelector('.bugs-filter-tab[data-tab="today"]');
+      if (todayTab) todayTab.click();
+    });
+
+    document.getElementById("bugs-kpi-issues")?.closest(".bugs-kpi-card")?.addEventListener("click", () => {
+      const allTab = document.querySelector('.bugs-filter-tab[data-tab="all"]');
+      if (allTab) allTab.click();
+    });
+
+    // Content root event delegation (View, History, Switch to All)
     const contentRoot = document.getElementById("bugs-content-root");
     if (contentRoot) {
       contentRoot.addEventListener("click", async (e) => {
-        // View button
-        const viewBtn = e.target.closest(".btn-bug-view");
-        if (viewBtn) {
+        // Switch to all button inside empty state
+        const switchBtn = e.target.closest("#btn-switch-all-bugs");
+        if (switchBtn) {
+          const allTab = document.querySelector('.bugs-filter-tab[data-tab="all"]');
+          if (allTab) allTab.click();
+          return;
+        }
+
+        // Animal link or History button
+        const petLink = e.target.closest(".btn-bug-pet-link, .btn-bug-history");
+        if (petLink) {
           e.stopPropagation();
-          const url = viewBtn.getAttribute("data-url");
-          const title = viewBtn.getAttribute("data-title");
-          openLightbox(url, title);
+          const petId = petLink.getAttribute("data-pet-id");
+          if (petId && global.VetAppPages?.openAnimalHistory) {
+            global.VetAppPages.openAnimalHistory(petId);
+          }
+          return;
+        }
+
+        // View button or Preview click
+        const viewTrigger = e.target.closest(".btn-bug-view, .bug-preview-wrap");
+        if (viewTrigger) {
+          e.stopPropagation();
+          const url = viewTrigger.getAttribute("data-url");
+          const title = viewTrigger.getAttribute("data-title");
+          const isVideo = viewTrigger.getAttribute("data-is-video") === "true";
+          const isPdf = viewTrigger.getAttribute("data-is-pdf") === "true";
+          const notes = viewTrigger.getAttribute("data-notes") || "";
+          const meta = viewTrigger.getAttribute("data-meta") || "";
+          if (url) {
+            openLightbox(url, title, isVideo, isPdf, notes, meta);
+          }
           return;
         }
       });
@@ -393,7 +513,16 @@
    * Main render method invoked when navigating to #/bugs
    */
   function render(tab = "today") {
-    state.currentTab = tab;
+    state.currentTab = tab || "today";
+    // Sync the tab active states in the DOM
+    document.querySelectorAll(".bugs-filter-tab").forEach((t) => {
+      const tTab = t.getAttribute("data-tab");
+      if (tTab === state.currentTab) {
+        t.classList.add("is-active");
+      } else {
+        t.classList.remove("is-active");
+      }
+    });
     const targetDate = getSelectedDate();
     loadBugReports(targetDate);
   }

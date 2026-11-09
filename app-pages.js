@@ -11,6 +11,7 @@
     reports: "view-reports",
     bugs: "view-bugs",
     media: "view-media",
+    logs: "view-logs",
   };
 
   const istDateFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -52,8 +53,9 @@
       return { name: "vitals-today", petId: null, filter };
     }
     if (parts[0] === "reports") return { name: "reports", petId: null, filter: null };
-    if (parts[0] === "bugs") return { name: "bugs", petId: null, filter: parts[1] || "all" };
-    if (parts[0] === "media") return { name: "media", petId: null, filter: parts[1] || "all" };
+    if (parts[0] === "bugs") return { name: "bugs", petId: null, filter: parts[1] || "today" };
+    if (parts[0] === "media") return { name: "media", petId: null, filter: parts[1] || "today" };
+    if (parts[0] === "logs") return { name: "logs", petId: null, filter: parts[1] || "all" };
     if (parts[0] === "animal" && parts[1]) {
       return { name: "history", petId: decodeURIComponent(parts[1]), filter: null };
     }
@@ -94,7 +96,8 @@
         (name === "vitals-today" && nav === "vitals-today") ||
         (name === "reports" && nav === "reports") ||
         (name === "bugs" && nav === "bugs") ||
-        (name === "media" && nav === "media");
+        (name === "media" && nav === "media") ||
+        (name === "logs" && nav === "logs");
       item.classList.toggle("active", active);
     });
   }
@@ -639,6 +642,201 @@
     return [1, 2, 3].map((i) => normNum(row?.[`${prefix}${i}`]) || 0);
   }
 
+  /**
+   * Session Audio Recordings & Doctor Notes Modal
+   */
+  async function openSessionAudioModal(petId, sid, sessionLabel, whenLabel, sObj, sNotes) {
+    const overlay = document.createElement("div");
+    overlay.className = "bug-modal-overlay session-audio-overlay";
+
+    const closingNote = String(sObj?.closing_notes || "").trim();
+    const sessionTitle = String(sObj?.title || "").trim();
+    const irNote = String(sNotes?.ir_ear || "").trim();
+    const rectNote = String(sNotes?.rectal_sensor || "").trim();
+    const refNote = String(sNotes?.reference_thermometer || "").trim();
+    const sessionStatus = String(sObj?.status || "closed").toLowerCase();
+
+    overlay.innerHTML = `
+      <div class="bug-modal-dialog session-audio-dialog" role="dialog" aria-modal="true">
+        <div class="bug-modal-head">
+          <div class="session-modal-titles">
+            <span class="session-modal-badge">${escapeHtml(sessionLabel || "Exam Session")}</span>
+            <h3>Session Clinical Notes & Audio Recordings</h3>
+            <p class="session-modal-subtitle">Started: ${escapeHtml(whenLabel || "—")} • Status: <span class="badge-status ${sessionStatus === 'closed' ? 'normal' : 'active'}">${escapeHtml(sessionStatus)}</span></p>
+          </div>
+          <button type="button" class="bug-modal-close" aria-label="Close">✕</button>
+        </div>
+
+        <div class="bug-modal-body session-modal-body">
+          <!-- 1. CLINICAL & SENSOR NOTES -->
+          <div class="session-modal-section">
+            <h4 class="session-section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              Doctor Clinical Observations & Notes
+            </h4>
+            <div class="session-notes-grid">
+              ${closingNote ? `
+                <div class="session-note-card session-note-card--closing">
+                  <span class="note-card-label">Session Closing Note / Protocol Reason:</span>
+                  <p class="note-card-text">${escapeHtml(closingNote)}</p>
+                </div>
+              ` : ""}
+              ${sessionTitle ? `
+                <div class="session-note-card">
+                  <span class="note-card-label">Session Title:</span>
+                  <p class="note-card-text">${escapeHtml(sessionTitle)}</p>
+                </div>
+              ` : ""}
+              ${irNote ? `
+                <div class="session-note-card session-note-card--ir">
+                  <span class="note-card-label">IR Ear Sensor Note:</span>
+                  <p class="note-card-text">${escapeHtml(irNote)}</p>
+                </div>
+              ` : ""}
+              ${rectNote ? `
+                <div class="session-note-card session-note-card--rectal">
+                  <span class="note-card-label">Rectal Probe Note:</span>
+                  <p class="note-card-text">${escapeHtml(rectNote)}</p>
+                </div>
+              ` : ""}
+              ${refNote ? `
+                <div class="session-note-card session-note-card--ref">
+                  <span class="note-card-label">Reference Thermometer Note:</span>
+                  <p class="note-card-text">${escapeHtml(refNote)}</p>
+                </div>
+              ` : ""}
+              ${!closingNote && !sessionTitle && !irNote && !rectNote && !refNote ? `
+                <p class="text-muted" style="margin: 0; padding: 8px 0;">No written clinical observation notes for this session.</p>
+              ` : ""}
+            </div>
+          </div>
+
+          <!-- 2. AUSCULTATION AUDIO RECORDINGS & AUDIO NOTES -->
+          <div class="session-modal-section">
+            <h4 class="session-section-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg>
+              Auscultation Audio Recordings & Audio Notes
+            </h4>
+            <div id="session-audio-list-root" class="session-audio-list">
+              <div class="bugs-loading-wrap" style="padding: 16px 0;">
+                <div class="bugs-spinner"></div>
+                <p>Loading session audio recordings…</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector(".bug-modal-close").addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+
+    try {
+      const client = await ensureClient();
+      const recResp = await client.recordings(petId, sid).catch(() => ({ heart: [], lung: [] }));
+      const heart = Array.isArray(recResp?.heart) ? recResp.heart : [];
+      const lung = Array.isArray(recResp?.lung) ? recResp.lung : [];
+      const allRecs = [
+        ...heart.map((r) => ({ ...r, _container: "heart" })),
+        ...lung.map((r) => ({ ...r, _container: "lung" }))
+      ];
+
+      const audioRoot = overlay.querySelector("#session-audio-list-root");
+      if (!audioRoot) return;
+
+      if (!allRecs.length) {
+        audioRoot.innerHTML = `<p class="text-muted" style="padding: 10px 0;">No audio recordings uploaded for this session.</p>`;
+        return;
+      }
+
+      const pointLabels = {
+        M: "Mitral Point (M)",
+        A: "Aortic Point (A)",
+        P: "Pulmonic Point (P)",
+        T: "Tricuspid Point (T)",
+        LL1: "Left Lung 1 (LL1)",
+        LL2: "Left Lung 2 (LL2)",
+        RL1: "Right Lung 1 (RL1)",
+        RL2: "Right Lung 2 (RL2)",
+      };
+
+      audioRoot.innerHTML = `
+        <div class="session-recordings-grid">
+          ${allRecs.map((rec) => {
+            const isHeart = rec._container === "heart";
+            const pt = String(rec.point || "").toUpperCase();
+            const ptName = pointLabels[pt] || `Point ${pt}`;
+            const dur = rec.duration_seconds ? `${Number(rec.duration_seconds).toFixed(1)}s` : "";
+            const note = String(rec.notes || "").trim();
+            const recId = rec.id;
+
+            return `
+              <div class="session-rec-card ${isHeart ? 'session-rec-card--heart' : 'session-rec-card--lung'}" data-rec-id="${escapeHtml(recId)}">
+                <div class="session-rec-header">
+                  <span class="session-rec-badge ${isHeart ? 'badge-heart' : 'badge-lung'}">
+                    ${isHeart ? '🫀 Heart' : '🫁 Lung'} • ${escapeHtml(ptName)}
+                  </span>
+                  <span class="session-rec-dur">${escapeHtml(dur)}</span>
+                </div>
+
+                ${note ? `
+                  <div class="session-rec-note-box">
+                    <span class="rec-note-label">Audio Note:</span>
+                    <p class="rec-note-text">${escapeHtml(note)}</p>
+                  </div>
+                ` : ""}
+
+                <div class="session-rec-player-area" id="rec-player-area-${escapeHtml(recId)}">
+                  <button type="button" class="btn-play-session-audio" data-rec-id="${escapeHtml(recId)}" data-pet-id="${escapeHtml(petId)}" data-type="${escapeHtml(rec._container)}">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    <span>Play Audio Clip</span>
+                  </button>
+                </div>
+              </div>`;
+          }).join("")}
+        </div>`;
+
+      // Wire play buttons
+      audioRoot.querySelectorAll(".btn-play-session-audio").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const recId = btn.getAttribute("data-rec-id");
+          const pId = btn.getAttribute("data-pet-id");
+          const rType = btn.getAttribute("data-type");
+          const playerArea = audioRoot.querySelector(`#rec-player-area-${recId}`);
+          if (!playerArea) return;
+
+          btn.disabled = true;
+          btn.innerHTML = `<span class="diag-spinner" style="width:12px;height:12px;"></span> Loading WAV…`;
+
+          try {
+            const streamHref = `/api/recordings/${encodeURIComponent(recId)}/audio-stream?pet_id=${encodeURIComponent(pId)}&type=${encodeURIComponent(rType)}`;
+            const buf = await client.downloadBinaryByHref(streamHref, {
+              deviceId: client.deviceId,
+              sessionToken: client.sessionToken,
+            });
+            const blob = new Blob([buf], { type: "audio/wav" });
+            const objUrl = URL.createObjectURL(blob);
+
+            playerArea.innerHTML = `
+              <div class="audio-inline-player">
+                <audio controls autoplay src="${objUrl}" style="width: 100%; height: 32px;"></audio>
+              </div>`;
+          } catch (err) {
+            console.error("Audio playback error:", err);
+            btn.disabled = false;
+            btn.innerHTML = `⚠️ Play Failed`;
+          }
+        });
+      });
+    } catch (err) {
+      console.error("Failed to load session recordings:", err);
+    }
+  }
+
   async function renderAnimalHistory(petId) {
     const root = document.getElementById("animal-history-root");
     const nameEl = document.getElementById("history-animal-name");
@@ -679,10 +877,14 @@
           .join(" · ");
       }
 
-      const sessionsResponse = await client.examSessions(petId);
+      const [sessionsResponse, petSummaryResp, tempNotesResp] = await Promise.all([
+        client.examSessions(petId).catch(() => []),
+        client.petTemperatureSummary(petId).catch(() => null),
+        client.temperatureNotes(petId).catch(() => null),
+      ]);
+
       const sessions = global.VetApiNormalize.normalizeSessions(sessionsResponse);
       const sessionLabelMap = global.VetApiAdapter?.sortAndIndexSessions?.(sessions) || {};
-      const petSummaryResp = await client.petTemperatureSummary(petId).catch(() => null);
       const summaries = Array.isArray(petSummaryResp) ? petSummaryResp : petSummaryResp?.summaries || petSummaryResp?.temperature_summaries || petSummaryResp?.data || petSummaryResp?.results || [];
       const summaryList = Array.isArray(summaries) ? summaries.filter((x) => x && typeof x === "object") : [];
 
@@ -690,6 +892,19 @@
         .map((s) => String(s?.id || s?.exam_session_id || "").trim())
         .filter(Boolean);
       const uniqSessionIds = Array.from(new Set(sessionIds));
+
+      // Fetch per-session temperature notes concurrently
+      const sessionNotesMap = {};
+      await Promise.all(
+        uniqSessionIds.map(async (sid) => {
+          try {
+            const res = await client.temperatureNotes(petId, sid);
+            if (res && typeof res === "object") {
+              sessionNotesMap[sid] = res;
+            }
+          } catch {}
+        })
+      );
 
       const cards = [];
       for (const sid of uniqSessionIds) {
@@ -711,8 +926,35 @@
         const refMax = Math.max(...refs);
         const sessionLabel = sessionLabelMap[sid] || global.VetApiAdapter?.formatSessionLabel?.(sid, petId) || (sid ? `Session (${sid.slice(0, 8)})` : "—");
 
+        const sNotes = sessionNotesMap[sid] || tempNotesResp || {};
+        const closingNote = String(sObj.closing_notes || "").trim();
+        const irNote = String(sNotes.ir_ear || "").trim();
+        const rectNote = String(sNotes.rectal_sensor || "").trim();
+        const refNote = String(sNotes.reference_thermometer || "").trim();
+        const summaryNote = String(best?.notes || "").trim();
+
+        const notesList = [];
+        if (closingNote) {
+          notesList.push({ type: "session", label: "Session Note", text: closingNote });
+        }
+        if (irNote) {
+          notesList.push({ type: "ir", label: "IR Ear", text: irNote });
+        }
+        if (rectNote) {
+          notesList.push({ type: "rectal", label: "Rectal", text: rectNote });
+        }
+        if (refNote) {
+          notesList.push({ type: "ref", label: "Ref", text: refNote });
+        }
+        if (summaryNote && !notesList.some((n) => n.text === summaryNote)) {
+          notesList.push({ type: "general", label: "Summary", text: summaryNote });
+        }
+
         cards.push({
           sid,
+          sObj,
+          sNotes,
+          notesList,
           sessionLabel,
           whenSort: recorded?.getTime?.() || started?.getTime?.() || 0,
           whenLabel,
@@ -744,8 +986,14 @@
         const refs = best ? summaryTriple(best, "ref") : [0, 0, 0];
         const refMax = Math.max(...refs);
         const sessionLabel = sessionLabelMap[sid] || global.VetApiAdapter?.formatSessionLabel?.(sid, petId) || (sid ? `Session (${sid.slice(0, 8)})` : "—");
+        const summaryNote = String(best?.notes || "").trim();
+        const notesList = summaryNote ? [{ type: "general", label: "Summary", text: summaryNote }] : [];
+
         cards.push({
           sid,
+          sObj: null,
+          sNotes: null,
+          notesList,
           sessionLabel,
           whenSort: recorded?.getTime?.() || 0,
           whenLabel: "—",
@@ -778,8 +1026,8 @@
                 <th>Rectal (t1/t2/t3)</th>
                 <th>Ref max</th>
                 <th>Mean / Max / SD</th>
-                <th>Notes</th>
-                <th>Exam session</th>
+                <th>Doctor Notes & Observations</th>
+                <th>Exam Session & Audio</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -790,7 +1038,6 @@
                   const rectT = row.rect ? [row.rect.t1, row.rect.t2, row.rect.t3].map(fmtC).join(" · ") : "—";
                   const best = row.ir || row.rect || {};
                   const stats = [fmtMaybe(best.mean), fmtMaybe(best.max), fmtMaybe(best.sd)].join(" / ");
-                  const note = String(best.notes || "").trim() || "—";
                   const badgeHtml = global.VetStatusEngine?.renderBadgeHtml
                     ? global.VetStatusEngine.renderBadgeHtml(row.statusInfo || {
                         statusLabel: row.statusLabel,
@@ -808,8 +1055,30 @@
                   <td>${escapeHtml(rectT)}</td>
                   <td class="vitals-text-bold">${row.refMax > 0 ? `${row.refMax.toFixed(2)}°C` : "—"}</td>
                   <td>${escapeHtml(stats)}</td>
-                  <td class="animal-id-sub">${escapeHtml(note)}</td>
-                  <td class="animal-id-sub"><strong title="Session ID: ${escapeHtml(row.sid)}">${escapeHtml(row.sessionLabel)}</strong></td>
+                  <td class="history-notes-col">
+                    ${row.notesList && row.notesList.length > 0 ? `
+                      <div class="history-notes-stack">
+                        ${row.notesList.map((n) => `
+                          <div class="history-note-badge history-note-badge--${n.type}">
+                            <span class="note-badge-tag">${escapeHtml(n.label)}:</span>
+                            <span class="note-badge-text">${escapeHtml(n.text)}</span>
+                          </div>
+                        `).join("")}
+                      </div>
+                    ` : `<span class="text-muted">—</span>`}
+                  </td>
+                  <td class="history-session-col">
+                    <div class="history-session-cell">
+                      <strong class="session-label-strong" title="Session ID: ${escapeHtml(row.sid)}">${escapeHtml(row.sessionLabel)}</strong>
+                      <button type="button" class="btn-session-details" data-sid="${escapeHtml(row.sid)}" data-label="${escapeHtml(row.sessionLabel)}" data-when="${escapeHtml(row.whenLabel)}" title="Open complete audio recordings & doctor notes for this session">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        </svg>
+                        <span>Audio & Notes</span>
+                      </button>
+                    </div>
+                  </td>
                   <td>${badgeHtml}</td>
                 </tr>`;
                 })
@@ -817,6 +1086,19 @@
             </tbody>
           </table>
         </div>`;
+
+      // Wire session detail clicks
+      root.querySelectorAll(".btn-session-details").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const sid = btn.getAttribute("data-sid");
+          const label = btn.getAttribute("data-label");
+          const when = btn.getAttribute("data-when");
+          const targetCard = cards.find((c) => c.sid === sid);
+          const sObj = targetCard?.sObj || sessions.find((s) => String(s?.id || s?.exam_session_id || "").trim() === sid) || {};
+          const sNotes = targetCard?.sNotes || sessionNotesMap[sid] || tempNotesResp || {};
+          openSessionAudioModal(petId, sid, label, when, sObj, sNotes);
+        });
+      });
     } catch (err) {
       root.innerHTML = `<p class="empty-state">Failed to load history: ${escapeHtml(err.message || err)}</p>`;
     }
@@ -883,7 +1165,16 @@
       setHeader("Clinical Media & Documents", "Case sheets, echo/ultrasound, medical photography, and video records.", false);
       document.body.classList.remove("reports-mode");
       global.VetDashboardFilters?.showBar?.(true);
-      global.VetMediaPage?.render?.(filter || "all");
+      global.VetMediaPage?.render?.(filter || "today", "all");
+      return;
+    }
+
+    if (name === "logs") {
+      showView("logs");
+      setHeader("System & Device Logs", "Decoded multi-stream timeline spreadsheets (.xlsx), speed reports (.md), and CloudWatch raw traces.", false);
+      document.body.classList.remove("reports-mode");
+      global.VetDashboardFilters?.showBar?.(true);
+      global.VetLogsPage?.render?.(filter || "all");
       return;
     }
 
@@ -907,6 +1198,12 @@
     document.getElementById("kpi-card-vitals-today")?.addEventListener("click", () => {
       navigate("/vitals-today/all");
     });
+    document.getElementById("kpi-card-bugs-today")?.addEventListener("click", () => {
+      navigate("/bugs");
+    });
+    document.getElementById("kpi-card-media-today")?.addEventListener("click", () => {
+      navigate("/media");
+    });
     document.getElementById("cv-box-tested")?.addEventListener("click", () => {
       navigate("/vitals-today/all");
     });
@@ -916,8 +1213,28 @@
     document.getElementById("cv-box-failed")?.addEventListener("click", () => {
       navigate("/vitals-today/incomplete");
     });
+    document.getElementById("cv-box-bugs")?.addEventListener("click", () => {
+      navigate("/bugs");
+    });
+    document.getElementById("cv-box-media")?.addEventListener("click", () => {
+      navigate("/media");
+    });
+    document.getElementById("btn-view-all-cases")?.addEventListener("click", () => {
+      navigate("/vitals-today/all");
+    });
+    document.getElementById("cv-progress-card-box")?.addEventListener("click", () => {
+      navigate("/reports");
+    });
 
-    ["cv-box-tested", "cv-box-success", "cv-box-failed"].forEach((id) => {
+    // Species card clicks in cv-species-cards
+    document.getElementById("cv-species-cards")?.addEventListener("click", (e) => {
+      const card = e.target.closest("[data-species]");
+      if (card) {
+        navigate("/animals");
+      }
+    });
+
+    ["cv-box-tested", "cv-box-success", "cv-box-failed", "cv-box-bugs", "cv-box-media", "cv-progress-card-box"].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener("keydown", (e) => {
